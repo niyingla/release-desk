@@ -1,0 +1,7 @@
+cRonstrue 3.32.0 — MIT License
+Upstream: https://github.com/bradymholt/cRonstrue
+Distribution: npm cronstrue@3.32.0 (package-lock.json pins integrity)
+cronstrue.min.js: node_modules/cronstrue/dist/cronstrue.min.js
+zh_CN.min.js: node_modules/cronstrue/locales/zh_CN.min.js
+LICENSE is included unchanged from the npm distribution.
+Resources are embedded in the EXE; runtime does not download from a CDN.

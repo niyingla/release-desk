@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "warnings", "items"],
+  "properties": {
+    "summary": { "type": "string" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "action", "service", "fields", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["job", "config", "sql", "topic", "verify"]
+          },
+          "action": {
+            "type": "string",
+            "enum": ["新增", "修改", "关闭", "删除"],
+            "description": "关闭仅适用于 job；其他类型仍为新增、修改、删除。"
+          },
+          "service": { "type": "string" },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "value"],
+              "properties": {
+                "name": { "type": "string" },
+                "value": { "type": "string" }
+              }
+            }
+          },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

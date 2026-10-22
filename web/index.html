@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="__THEME__">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="release-token" content="__TOKEN__" />
+    <title>Release Desk</title>
+    <script src="/scripts/themes.js"></script>
+    <link rel="stylesheet" href="/styles/style.css" />
+    <link rel="stylesheet" href="/styles/themes.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brandmark">r<span>↗</span></span>
+        <div>Release Desk<small>每一次发布，都井然有序</small></div>
+      </div>
+      <div class="workspace">
+        <span class="workspace-icon">N</span>
+        <div>NewLink 工作空间<small>本地版本管理</small></div>
+        <span class="workspace-dot"></span>
+      </div>
+      <div class="side-label">工作台</div>
+      <button class="nav active" data-action="overview">
+        <i data-icon="grid"></i>版本总览<span class="keyhint">⌘</span>
+      </button>
+      <button class="nav" data-action="archived-versions">
+        <i data-icon="archive"></i>归档版本
+      </button>
+      <button class="nav" data-action="tasks">
+        <i data-icon="clock"></i>任务中心<span
+          id="task-count"
+          class="keyhint"
+        ></span>
+      </button>
+      <div class="side-heading">
+        <span class="side-label">我的版本</span
+        ><button
+          class="icon-btn dark"
+          data-action="new-version"
+          title="新建版本"
+        >
+          ＋
+        </button>
+      </div>
+      <div id="side-versions" class="version-nav"></div>
+      <div class="sidebar-bottom">
+        <div class="local-note">
+          <span class="pulse"></span>本地存储 · 自动保存
+        </div>
+        <button class="side-button" data-action="settings">
+          <i data-icon="settings"></i>连接与设置
+        </button>
+        <div class="side-footer">
+          <span class="avatar">H</span>
+          <div>
+            我的发布工作台<small
+              ><button
+                class="text-link"
+                id="software-version"
+                data-action="software-info"
+              >
+                软件版本记录
+              </button></small
+            >
+          </div>
+        </div>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div class="breadcrumb">
+          工作空间 <span>/</span> <b id="breadcrumb">版本总览</b>
+        </div>
+        <div class="header-right">
+          <button
+            id="update-button"
+            class="button small"
+            data-action="software-update"
+            title="从 GitHub 检查新版软件并查看发布说明，不上传本机业务记录。"
+          >
+            检查更新
+          </button>
+          <select
+            id="theme-select"
+            class="theme-select"
+            aria-label="界面主题"
+            title="切换界面主题颜色，选择后自动保存在本机。"
+          ></select>
+          <span
+            class="badge green"
+            title="版本记录保存在当前电脑，修改后自动保存到本地版本文件。"
+            ><span class="dot"></span> 数据本地保存</span
+          ><button
+            class="icon-btn"
+            data-action="backup"
+            aria-label="备份记录"
+            title="将版本事项和 SQL 执行历史导出为 JSON 备份文件。"
+          >
+            <i data-icon="archive"></i></button
+          ><button
+            class="icon-btn"
+            data-action="restore"
+            aria-label="恢复备份"
+            title="选择之前导出的 JSON 备份文件，将记录合并恢复到本机。"
+          >
+            <i data-icon="upload"></i>
+          </button>
+        </div>
+      </header>
+      <div
+        id="scan-status"
+        class="scan-status"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
+      <div id="content" class="content"></div>
+      <footer>
+        <span id="footer-note">准备就绪</span
+        ><span
+          >双击单元格复制内容 <span class="footer-separator">·</span> AI
+          写入不会触发 SQL 执行</span
+        >
+      </footer>
+    </main>
+    <div id="toast" class="toast"></div>
+    <div id="modal-root"></div>
+    <input id="restore-file" type="file" accept=".json" hidden /><input
+      id="sql-file"
+      type="file"
+      accept=".sql,text/plain"
+      hidden
+    />
+    <script src="/scripts/cell-preview.js"></script>
+    <script src="/scripts/batch-actions.js"></script>
+    <script src="/scripts/tasks.js"></script>
+    <script src="/scripts/vendor/cronstrue/cronstrue.min.js"></script>
+    <script src="/scripts/vendor/cronstrue/zh_CN.min.js"></script>
+    <script src="/scripts/cron.js"></script>
+    <script src="/scripts/sql-environments.js"></script>
+    <script src="/scripts/updates.js"></script>
+    <script src="/scripts/app.js"></script>
+  </body>
+</html>

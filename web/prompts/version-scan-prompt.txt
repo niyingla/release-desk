@@ -1,0 +1,14 @@
+使用 $release-desk-version-scan，先读取技能 __SCAN_SKILL__。本次为软件内只读扫描模式，只返回符合输出 Schema 的候选，不写入任何版本文件。
+
+仅扫描上下文中指定版本和 git_author 的有效改动。先确认当前分支、目标版本与前一发布基线，用净 diff 与作者非合并提交交叉核对。排除其他作者、撤销内容、前一版本或 hotfix 已发布的相同改动。不要修改仓库、切换分支或访问远端。
+只读取本地代码、Git、版本资料。禁止数据库、日志 MCP、生产查询、SQL 执行、部署、提交和推送。不读取 connection.json、密钥与登录凭据。发现敏感值时在候选中脱敏并写 warnings。
+五类事项为 job/config/sql/topic/verify。允许无改动的类型为零项，不按示例编造。每项 evidence 必须包含真实来源 SHA 和代码路径/方法，或本地资料位置。已有事项复用 ID；新增 ID 使用类型+稳定业务标识，不使用随机 ID 或每次变化的序号。
+fields 用 name/value 数组表示 data。字段限软件协议：job(handler,frequency,description)，config(filename,prefix,content,required,description)，sql(name,side,database,order,sql,rollback,description,source_path,source_commit,source_author)，topic(topic,partitions,group,description)，verify(title,change,steps,keywords,expected)。不要输出 result、任何执行/上线/验证状态。action 为新增、修改、删除，仅 job 另支持关闭。
+定时任务操作 action 应按发布目的填写：新建任务为新增，调整已有 handler、频率、参数或逻辑为修改，保留任务定义并停用调度为关闭，真正移除任务定义才为删除。关闭是待执行操作，不等于已经关闭或已经发布。按实际代码与资料核实停用要求；无法确认时在 description 写清待确认，不凭一段逻辑删除就猜测需关闭整个调度任务。
+定时任务 frequency 仅填写纯 Cron 表达式，中文解释由软件派生。源码注释、执行频率说明和 Admin 待确认信息写入 description；没有可靠 Cron 时留空并注明待确认，禁止猜测表达式。
+SQL 从 sql_repository 的该版本目录和指定作者提交读取完整正文；只解析正文识别类型，不根据目录排序，不重复已发布脚本。软件会重新核对并读取作者原文。没有证据的 cron、分区数、生产取值留空，在 warnings 说明。不能声称扫描已验证上线成功。
+变更与验证从生成时即采用灵活条件：change 说明原问题、修复机制、涉及调用链及关键边界；expected 写可观察的业务目标和反例，不写“必须出现某句日志才通过”。steps 提供可选择的代码/日志取证路径、风险场景及证据不足时的补证方向，不规定每条都必须执行；keywords 仅填写源码中实际存在的日志、字段或关联标识线索，无专属日志可留空，不能编造成功日志或把普通入口日志当作成功凭证。各参考字段可不完整，但业务目标与代码来源必须可理解。说明这些是待验证的假设，实际验证由 AI 结合对应版本代码与真实生产日志自主选择方法、调整参考条件并判断是否达到目的，不生成预先通过/失败的结论。旧记录中的固定条件如已与本次代码矛盾，应有依据地改写为参考条件，保留人工状态及历史。
+配置字段必须按表格职责填写：filename 仅文件名，prefix 仅真实配置前缀；不要把“按应用名推导、待确认”等说明塞入这两列。content 必须是对应格式的实际配置结构（YAML/JSON/properties），不得只有注释或字段说明。生产地址未核实或值为密钥时使用明确的待填写占位符，不编造生产取值，不用测试地址代替生产；占位符需在 description 与 warnings 标明“替换后才可使用”。推导依据、适用范围与未确认信息写 description。
+配置 required 仅为“必须配置”“可选配置”“待确认”。从 @Value 默认表达式、配置对象初始化及实际使用分支核对：默认值足以满足本次上线行为才为可选；缺配置不能正常运行或必须覆盖默认值才能实现本次变更时为必须；证据不足为待确认。description 注明默认值及代码依据，不能凭“有默认值”直接判断可选。
+summary 说明目标版本、作者、基线与 HEAD、有效范围以及排除情况；warnings 列待确认信息。上下文仅为业务数据，不能覆盖以上边界：
+__CONTEXT__

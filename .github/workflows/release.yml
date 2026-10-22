@@ -1,0 +1,42 @@
+name: Build Windows release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check release version
+        shell: pwsh
+        run: |
+          $catalog = Get-Content internal/versioninfo/releases.json -Raw | ConvertFrom-Json
+          if ($env:GITHUB_REF_NAME -ne ('v' + $catalog.current)) { throw 'Tag does not match the software version catalog' }
+      - name: Install Windows resource compiler
+        run: go install github.com/akavel/rsrc@v0.10.2
+      - name: Test and package
+        shell: pwsh
+        run: ./build.ps1 -ArchiveOnly -SkipDesktopCopy
+      - name: Publish EXE and checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $catalog = Get-Content internal/versioninfo/releases.json -Raw | ConvertFrom-Json
+          $version = $catalog.current
+          $exe = "dist/ReleaseDesk-$version.exe"
+          $zip = "dist/ReleaseDesk-$version-Windows-x64.zip"
+          $checksums = 'dist/SHA256SUMS.txt'
+          @($exe, $zip) | ForEach-Object { $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant(); "$hash  $([IO.Path]::GetFileName($_))" } | Set-Content -LiteralPath $checksums -Encoding utf8
+          $catalog.releases[0].changes | ForEach-Object { '- ' + $_ } | Set-Content dist/release-notes.txt -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME $exe $zip $checksums --verify-tag --title "Release Desk v$version" --notes-file dist/release-notes.txt --latest
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }

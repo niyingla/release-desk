@@ -1,0 +1,16 @@
+.tools/
+.work/
+ReleaseDesk-*.exe
+node_modules/
+dist/
+.idea/
+*.log
+.env
+.env.*
+connection*.json
+settings.json
+ui-preferences.json
+cmd/releasedesk/resources_windows.syso
+# 本机业务示例和历史制作脚本不进入公开源码；通用示例独立保留。
+examples/5.7.1.json
+tools/examples/

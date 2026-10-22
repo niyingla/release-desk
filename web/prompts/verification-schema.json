@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["通过", "失败", "证据不足"] },
+    "summary": { "type": "string" },
+    "environment": { "type": "string", "enum": ["生产"] },
+    "window": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "analysis": {
+      "type": "object",
+      "description": "AI 根据代码与日志自主分析，字段仅解释依据，不规定成功关键词或核验算法。",
+      "properties": {
+        "goal": { "type": "string" },
+        "code": { "type": "string" },
+        "logs": { "type": "string" },
+        "reasoning": { "type": "string" }
+      },
+      "required": ["goal", "code", "logs", "reasoning"],
+      "additionalProperties": false
+    },
+    "next_steps": { "type": "string" }
+  },
+  "required": [
+    "status",
+    "summary",
+    "environment",
+    "window",
+    "evidence",
+    "analysis",
+    "next_steps"
+  ],
+  "additionalProperties": false
+}

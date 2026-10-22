@@ -1,0 +1,15 @@
+{
+  "name": "release-desk-ui-tools",
+  "private": true,
+  "description": "仅用于前端格式检查与界面回归，EXE 运行无需 Node.js",
+  "scripts": {
+    "format": "prettier --write web tools/**/*.cjs",
+    "check": "prettier --check web tools/**/*.cjs",
+    "qa": "node tools/qa/ui.cjs"
+  },
+  "devDependencies": {
+    "cronstrue": "3.32.0",
+    "playwright": "^1.58.0",
+    "prettier": "^3.6.0"
+  }
+}

@@ -1,0 +1,364 @@
+/* 每套主题只维护色板，组件使用统一语义颜色，避免为主题复制整套布局。 */
+:root {
+  --surface-raised: #fff;
+  --surface-subtle: #f8f9fc;
+  --surface-hover: #f0efff;
+  --field-bg: #fff;
+  --text-secondary: #66758e;
+  --text-soft: #8490a5;
+  /* 侧栏沿用当前色系的文字与强调色，底色独立留出导航层次。 */
+  --sidebar-bg: #dce3ed;
+  --sidebar-text: var(--text-secondary);
+  --sidebar-muted: var(--text-soft);
+}
+:root[data-theme="night"] {
+  --sidebar-bg: #111a29;
+  --bg: #151e2c;
+  --panel: #1d293b;
+  --ink: #e1e8f4;
+  --muted: #a7b6cf;
+  --line: #324056;
+  --purple: #9b9bf1;
+  --purple-soft: #303650;
+  --surface-raised: #223047;
+  --surface-subtle: #192538;
+  --surface-hover: #303c55;
+  --field-bg: #172335;
+  --text-secondary: #c1cce0;
+  --text-soft: #a2b2cb;
+}
+:root[data-theme="graphite"] {
+  --sidebar-bg: #151719;
+  --bg: #1b1d20;
+  --panel: #25282d;
+  --ink: #e7e8eb;
+  --muted: #b0b4bd;
+  --line: #40444c;
+  --purple: #a6adbf;
+  --purple-soft: #3b404b;
+  --surface-raised: #2c3036;
+  --surface-subtle: #22252a;
+  --surface-hover: #383d46;
+  --field-bg: #202328;
+  --text-secondary: #cbd0d8;
+  --text-soft: #aab1bf;
+}
+:root[data-theme="purple"] {
+  --sidebar-bg: #191624;
+  --bg: #211d2c;
+  --panel: #2c263b;
+  --ink: #ece4f6;
+  --muted: #bfb1d1;
+  --line: #4a3e5f;
+  --purple: #c0a1e8;
+  --purple-soft: #49395f;
+  --surface-raised: #342c46;
+  --surface-subtle: #272135;
+  --surface-hover: #443555;
+  --field-bg: #241e31;
+  --text-secondary: #d6c7e4;
+  --text-soft: #bbabd0;
+}
+:root[data-theme="forest"] {
+  --sidebar-bg: #102019;
+  --bg: #172521;
+  --panel: #20352e;
+  --ink: #e0ede7;
+  --muted: #acc9bc;
+  --line: #3b5148;
+  --purple: #8dc5ad;
+  --purple-soft: #304f42;
+  --surface-raised: #274036;
+  --surface-subtle: #1b2e27;
+  --surface-hover: #355446;
+  --field-bg: #182b23;
+  --text-secondary: #bfd9cd;
+  --text-soft: #a5c2b4;
+}
+:root[data-theme="light"] {
+  --sidebar-bg: #dce3ed;
+  --sidebar-text: #35465f;
+  --sidebar-muted: #52627a;
+  --bg: #e7ebf1;
+  --panel: #f2f4f8;
+  --surface-raised: #f4f6f9;
+  --surface-subtle: #e9edf3;
+  --surface-hover: #e3e5f1;
+  --field-bg: #edf1f6;
+}
+/* 导航、卡片和选中项使用不同深浅；切换主题时不再残留固定的深蓝侧栏。 */
+.sidebar {
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  scrollbar-color: var(--line) var(--sidebar-bg);
+}
+.sidebar .brand,
+.sidebar .workspace,
+.sidebar .nav.active,
+.sidebar .version-link.active {
+  color: var(--ink);
+}
+.sidebar .brandmark {
+  background: var(--purple);
+  color: #171d2a;
+}
+:root[data-theme="light"] .sidebar .brandmark {
+  color: #fff;
+}
+.sidebar .workspace {
+  background: var(--panel);
+  border-color: var(--line);
+}
+.sidebar .workspace-icon,
+.sidebar .avatar {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+.sidebar .nav,
+.sidebar .version-link,
+.sidebar .side-button,
+.sidebar .side-footer {
+  color: var(--sidebar-text);
+}
+.sidebar .brand small,
+.sidebar .workspace small,
+.sidebar .side-label,
+.sidebar .keyhint,
+.sidebar .icon-btn.dark,
+.sidebar .version-link small,
+.sidebar .local-note,
+.sidebar .side-footer small {
+  color: var(--sidebar-muted);
+}
+.sidebar .nav:hover,
+.sidebar .side-button:hover,
+.sidebar .version-link:hover,
+.sidebar .icon-btn.dark:hover {
+  background: var(--surface-hover);
+}
+.sidebar .nav.active,
+.sidebar .version-link.active {
+  background: var(--purple-soft);
+}
+.sidebar .version-link:before {
+  border-color: var(--sidebar-muted);
+}
+.sidebar .version-link.active:before {
+  background: var(--purple);
+  border-color: var(--purple);
+}
+.sidebar .side-footer {
+  border-color: var(--line);
+}
+.theme-select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+.detail-aside dd {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.scan-option {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  align-items: flex-start;
+  cursor: pointer;
+}
+.scan-option input {
+  margin-top: 3px;
+  accent-color: var(--purple);
+}
+.scan-option b {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+.scan-option small {
+  display: block;
+  color: var(--text-soft);
+  line-height: 1.7;
+  margin-top: 5px;
+}
+.scan-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 15px;
+}
+.template-paths {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.template-paths dd {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+/* 所有有实体背景的组件跟随主题，表格、编辑器和弹窗不残留高亮白块。 */
+header,
+footer,
+.stat,
+.button,
+.modal-head,
+.modal-foot,
+.version-options,
+.version-options button,
+.cell-preview {
+  background: var(--surface-raised);
+}
+.modal,
+.code-wrap,
+.code-toolbar,
+th,
+.cell-preview-heading,
+.version-picker-toggle,
+.search,
+.form-field input,
+.form-field select,
+.form-field textarea {
+  background: var(--surface-subtle);
+}
+.form-field input,
+.form-field select,
+.form-field textarea {
+  background: var(--field-bg);
+}
+.button,
+.search,
+.form-field input,
+.form-field select,
+.form-field textarea,
+.version-options,
+.cell-preview,
+.version-icon,
+.hint-banner {
+  border-color: var(--line);
+}
+td,
+.code-toolbar {
+  border-color: var(--line);
+}
+tbody tr:hover,
+.button:hover,
+.version-options button:hover {
+  background: var(--surface-hover);
+}
+tbody tr.selected,
+.version-options button[aria-selected="true"] {
+  background: var(--purple-soft);
+}
+.button.primary {
+  background: var(--purple);
+  color: #171d2a;
+}
+:root[data-theme="light"] .button.primary {
+  color: #fff;
+}
+h1,
+td strong,
+.detail-name,
+.stat-value,
+.modal-head h2,
+.cell-preview-heading,
+.form-field input,
+.form-field select,
+.form-field textarea {
+  color: var(--ink);
+}
+td,
+.code,
+.detail-aside dd,
+.breadcrumb b,
+.cell-preview-content,
+.version-options button,
+.button,
+.search input {
+  color: var(--text-secondary);
+}
+.form-field,
+.subtitle,
+.stat-label,
+.stat-note,
+.detail-meta,
+.detail-aside dt,
+.panel-title small,
+.panel-foot,
+.code-toolbar,
+th,
+.modal-head p,
+footer,
+.source-note,
+.row-number,
+.version-cell small,
+.empty,
+.breadcrumb {
+  color: var(--text-soft);
+}
+.hint-banner {
+  background: var(--purple-soft);
+  color: var(--muted);
+}
+.hint-banner b,
+.text-link,
+.tab.active {
+  color: var(--purple);
+}
+:root:not([data-theme="light"]) {
+  color-scheme: dark;
+}
+:root:not([data-theme="light"]) .badge {
+  background: #354254;
+  color: #c4cddd;
+}
+:root:not([data-theme="light"]) .badge.green {
+  background: #25483e;
+  color: #91cbb3;
+}
+:root:not([data-theme="light"]) .badge.amber {
+  background: #4a3d29;
+  color: #e2bc78;
+}
+:root:not([data-theme="light"]) .badge.purple {
+  background: var(--purple-soft);
+  color: #c5b5ef;
+}
+:root:not([data-theme="light"]) .badge.red {
+  background: #4f3038;
+  color: #e9a4b1;
+}
+:root:not([data-theme="light"]) .notice {
+  background: #403728;
+  border-color: #66583b;
+  color: #d7bf8d;
+}
+:root:not([data-theme="light"]) .notice.info {
+  background: var(--purple-soft);
+  border-color: var(--line);
+  color: var(--text-secondary);
+}
+:root:not([data-theme="light"]) .code .kw {
+  color: #b4a5e6;
+}
+:root:not([data-theme="light"]) .code .str {
+  color: #9bc8b1;
+}
+:root:not([data-theme="light"]) .code .comment {
+  color: #9aa8bd;
+}
+:root:not([data-theme="light"]) .stat-icon {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+:root:not([data-theme="light"]) .tab-count {
+  background: var(--purple-soft);
+  color: var(--text-secondary);
+}
