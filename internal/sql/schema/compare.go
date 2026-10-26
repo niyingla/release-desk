@@ -10,9 +10,10 @@ import (
 	"github.com/xwb1989/sqlparser"
 )
 
-var integerWidth = regexp.MustCompile(`\b(tinyint|smallint|mediumint|int|integer|bigint)\(\d+\)`)
-var temporalZero = regexp.MustCompile(`\b(timestamp|datetime|time)\(0\)`)
-var decimalScaleZero = regexp.MustCompile(`\b(decimal|numeric)\((\d+)\)`)
+// 仅归一字段类型本身；ENUM/SET 字符串里的相同文本属于业务值。
+var integerWidth = regexp.MustCompile(`^(tinyint|smallint|mediumint|int|integer|bigint)\(\d+\)`)
+var temporalZero = regexp.MustCompile(`^(timestamp|datetime|time)\(0\)`)
+var decimalScaleZero = regexp.MustCompile(`^(decimal|numeric)\((\d+)\)`)
 
 // Compare 对照一个约束，不将同名对象直接视为结构一致。
 // 参数 check：解析出的目标约束；参数 actual：该目标表的实时元数据。
@@ -176,7 +177,10 @@ func normalizeType(value string) string {
 	value = decimalScaleZero.ReplaceAllString(value, "$1($2,0)")
 	// DECIMAL(n) 的缺省小数位是零；不能把服务器补出的 ,0 当成结构漂移。
 	// INT/INTEGER 和 BOOL 是 MySQL 的类型别名。
-	value = strings.ReplaceAll(value, "integer", "int")
+	if strings.HasPrefix(value, "integer") {
+		// INTEGER 只在类型首部作为别名，不替换枚举引号内的业务字符串。
+		value = "int" + strings.TrimPrefix(value, "integer")
+	}
 	if strings.HasPrefix(value, "numeric") {
 		value = "decimal" + strings.TrimPrefix(value, "numeric")
 	}

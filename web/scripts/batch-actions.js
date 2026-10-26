@@ -18,7 +18,9 @@ function syncBulkSelection(version) {
   bulkSelectionContext = context;
   const valid = new Set(
     version.items
-      .filter((item) => item.kind === currentKind)
+      .filter(
+        (item) => item.kind === currentKind && !needsManualVerification(item),
+      )
       .map((item) => item.id),
   );
   bulkCheckedIDs = new Set([...bulkCheckedIDs].filter((id) => valid.has(id)));
@@ -31,7 +33,28 @@ function syncBulkSelection(version) {
 function bulkControls() {
   if (!["sql", "verify"].includes(currentKind)) return "";
   const queue = currentKind === "sql" ? state.sql_queue : state.verify_queue;
-  return `<div class="bulk-tools"><button class="text-link" data-action="bulk-select-all">全选</button><span class="bulk-count">已选 ${bulkCheckedIDs.size} 项</span>${button(currentKind === "sql" ? "bulk-execute" : "bulk-verify", currentKind === "sql" ? "批量执行" : "批量验证", "play", "", bulkCheckedIDs.size ? "" : "disabled")}${queue?.version === currentVersion ? button("bulk-progress", queue.running ? "查看进度" : "批次结果", "clock") : ""}</div>`;
+  const hasQueue =
+    queue &&
+    (queue.version === currentVersion ||
+      (currentKind === "verify" &&
+        queue.rows.some((row) => row.version === currentVersion)));
+  return `<div class="bulk-tools"><button class="text-link" data-action="bulk-select-all">全选</button><span class="bulk-count">已选 ${bulkCheckedIDs.size} 项</span>${button(currentKind === "sql" ? "bulk-execute" : "bulk-verify", currentKind === "sql" ? "批量执行" : "批量验证", "play", "", bulkCheckedIDs.size ? "" : "disabled")}${currentKind === "verify" ? verificationConcurrencyControl() : ""}${hasQueue ? button("bulk-progress", queue.running ? "查看进度" : "批次结果", "clock") : ""}</div>`;
+}
+
+/**
+ * 在验证列表直接展示并发设置，逐项入队和批量验证使用同一偏好。
+ * @returns {string} 运行中显示固定上限并禁用修改；空闲时可选 1 至后端统一上限。
+ */
+function verificationConcurrencyControl() {
+  const running = state.verify_queue?.running || state.single_verify?.running;
+  const selected = running
+    ? state.verify_queue?.concurrency || state.verification_default_concurrency
+    : state.verification_default_concurrency;
+  const options = Array.from(
+    { length: state.verification_concurrency },
+    (_, index) => index + 1,
+  );
+  return `<label class="verification-concurrency">并发数<select id="verification-concurrency" aria-label="验证并发数" title="逐项重试与批量验证共用，保存后记住选择；运行中的队列上限固定。" ${running ? "disabled" : ""}>${options.map((value) => `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`).join("")}</select>${running ? "<span>本轮上限</span>" : ""}</label>`;
 }
 
 /**
@@ -41,6 +64,9 @@ function bulkControls() {
  */
 function bulkRowCheckbox(item) {
   if (!["sql", "verify"].includes(currentKind)) return "";
+  // 人工项不提供可批量选择的数据属性，全选只遍历真正允许的自动项。
+  if (needsManualVerification(item))
+    return '<td class="table-check-cell"><input type="checkbox" disabled aria-label="需手动验证，不可加入自动队列" title="关键结果需人工核对，不能自动验证"></td>';
   return `<td class="table-check-cell"><input type="checkbox" data-bulk-check="${escapeHTML(item.id)}" aria-label="选择 ${escapeHTML(itemTitle(item))}" ${bulkCheckedIDs.has(item.id) ? "checked" : ""}></td>`;
 }
 
@@ -135,14 +161,23 @@ function showBulkVerify() {
     { length: state.verification_concurrency },
     (_, index) => String(index + 1),
   );
-  const selectedConcurrency = String(state.verification_default_concurrency);
+  const appending = state.verify_queue?.running;
+  const selectedConcurrency = String(
+    appending
+      ? state.verify_queue.concurrency
+      : state.verification_default_concurrency,
+  );
   showModal(
     "批量验证上线结果",
-    `已勾选 ${items.length} 项变更，最多 ${state.verification_concurrency} 项并发，独立保存结论`,
-    `<div class="notice info">每项先集合版本代码与生产日志，再由 AI 自主判断目标是否达到。参考条件可调整，不按固定日志词判定。最多同时验证 ${state.verification_concurrency} 项，可在下方调小并发数，会使用 Codex 额度；一项失败或证据不足不影响其他项。停止会取消全部运行项，保留已完成结果。</div><div class="form-grid">${formField("并发数（启动后记住选择）", "bulk-verify-concurrency", selectedConcurrency, { select: concurrencyOptions })}${formField("开始时间（北京时间）", "bulk-verify-start", dateTimeLocal(new Date(Date.now() - 3600000)), { type: "datetime-local" })}${formField("结束时间（北京时间）", "bulk-verify-end", dateTimeLocal(new Date()), { type: "datetime-local" })}</div><ol class="bulk-selection-list">${items.map((item) => `<li>${escapeHTML(itemTitle(item))}<small>${escapeHTML(item.service || "由 AI 定位涉及服务")}</small></li>`).join("")}</ol>`,
+    appending
+      ? `加入当前验证队列，沿用本轮 ${selectedConcurrency} 并发，已有等待或运行项自动合并`
+      : `已勾选 ${items.length} 项变更，最多 ${state.verification_concurrency} 项并发，独立保存结论`,
+    `<div class="notice info">每项先集合版本代码与生产日志，再由 AI 自主判断目标是否达到。参考条件可调整，不按固定日志词判定。最多同时验证 ${state.verification_concurrency} 项，可在下方调小并发数，会使用 Codex 额度；一项失败或证据不足不影响其他项。停止会取消全部运行项，保留已完成结果。</div><div class="form-grid">${formField("并发数（启动后记住选择）", "bulk-verify-concurrency", selectedConcurrency, { select: concurrencyOptions })}${verificationRangeControl("bulk-verify")}${formField("开始时间（北京时间）", "bulk-verify-start", dateTimeLocal(new Date(Date.now() - 3600000)), { type: "datetime-local" })}${formField("结束时间（北京时间）", "bulk-verify-end", dateTimeLocal(new Date()), { type: "datetime-local" })}</div><ol class="bulk-selection-list">${items.map((item) => `<li>${escapeHTML(itemTitle(item))}<small>${escapeHTML(item.service || "由 AI 定位涉及服务")}</small></li>`).join("")}</ol>`,
     `${button("close-modal", "取消")}${button("bulk-confirm-verify", `开始验证 ${items.length} 项`, "spark", "primary")}`,
     true,
   );
+  // 追加使用本轮既定上限，不能让表单显示一个不会实际生效的不同并发数。
+  if (appending) $('[name="bulk-verify-concurrency"]').disabled = true;
 }
 
 /**
@@ -199,22 +234,26 @@ function renderBulkProgress() {
         const full = row.result
           ? verificationResultText(row.result)
           : row.detail || "";
-        const expanded = bulkExpandedState.get(row.item_id) || false;
-        const content = row.result
-          ? `<details data-bulk-progress-id="${escapeHTML(row.item_id)}" ${expanded ? "open" : ""}><summary>${escapeHTML(row.detail || "查看验证依据")}</summary><pre class="code">${escapeHTML(full)}</pre></details>`
-          : `<span class="bulk-result-text">${escapeHTML(row.detail || "—")}</span>`;
-        return `<tr><td>${escapeHTML(row.title)}</td><td>${badge(row.state)}</td><td data-copy="${escapeHTML(full)}">${content}</td></tr>`;
+        const rowKey = row.id || row.item_id;
+        const expanded = bulkExpandedState.get(rowKey) || false;
+        const content =
+          (row.result
+            ? `<details data-bulk-progress-id="${escapeHTML(rowKey)}" ${expanded ? "open" : ""}><summary>${escapeHTML(row.detail || "查看验证依据")}</summary><pre class="code">${escapeHTML(full)}</pre></details>`
+            : `<span class="bulk-result-text">${escapeHTML(row.detail || "—")}</span>`) +
+          verificationProgressHTML(row.progress);
+        return `<tr data-progress-key="${escapeHTML(rowKey)}"><td>${escapeHTML(row.version && row.version !== queue.version ? row.version + " · " + row.title : row.title)}</td><td>${badge(verificationStatusLabel(row.state, row.result))}${queuedVerificationCancelButton(row)}</td><td data-copy="${escapeHTML(full)}">${content}</td></tr>`;
       })
       .join("")}</tbody></table>`;
   } else {
     body += queue.rows
       .map((row) => {
-        const rows =
+        const rows = orderedDatabaseRows(
           queue.running &&
-          state.batch?.item_id === row.item_id &&
-          state.batch?.version === queue.version
+            state.batch?.item_id === row.item_id &&
+            state.batch?.version === queue.version
             ? state.batch.rows
-            : row.executions;
+            : row.executions,
+        );
         const expanded = bulkExpandedState.has(row.item_id)
           ? bulkExpandedState.get(row.item_id)
           : row.state === "执行中";
@@ -222,7 +261,26 @@ function renderBulkProgress() {
       })
       .join("");
   }
-  $("#modal-body").innerHTML = body;
+  updateProgressView($("#modal-body"), body);
+}
+
+/**
+ * 展示 AI 明确报告的核验行动和阶段发现，兼容没有实时摘要的旧任务。
+ * @param {Array<object>} entries 后端过滤、脱敏并限量的时间与纯文本摘要。
+ * @returns {string} 最近进展列表；所有模型文字转义后展示。
+ */
+function verificationProgressHTML(entries = []) {
+  if (!entries.length) return "";
+  // 后端历史维持原序，界面用副本倒序，最新内容始终在顶部。
+  return `<section class="verification-live"><strong>核验进展 · 最新在前</strong><ol>${[
+    ...entries,
+  ]
+    .reverse()
+    .map(
+      (entry) =>
+        `<li data-progress-key="${escapeHTML(entry.at + "|" + entry.summary)}"><time>${escapeHTML(taskTime(entry.at))}</time><span>${escapeHTML(entry.summary)}</span></li>`,
+    )
+    .join("")}</ol></section>`;
 }
 
 /**
@@ -288,8 +346,28 @@ async function handleBatchAction(action) {
   return true;
 }
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   const target = event.target;
+  if (target.id === "verification-concurrency") {
+    target.disabled = true;
+    try {
+      // 仅保存并发偏好，不启动模型，也不覆盖其他工作区设置。
+      await api("verification/concurrency", {
+        concurrency: Number(target.value),
+      });
+      await refresh(true);
+      toast("验证并发数已保存");
+    } catch (error) {
+      target.value = String(state.verification_default_concurrency);
+      toast(error.message, true);
+    } finally {
+      if (target.isConnected)
+        target.disabled = Boolean(
+          state.verify_queue?.running || state.single_verify?.running,
+        );
+    }
+    return;
+  }
   if (target.matches("[data-bulk-check]")) {
     target.checked
       ? bulkCheckedIDs.add(target.dataset.bulkCheck)

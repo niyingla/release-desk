@@ -16,6 +16,8 @@ import (
 	"release-desk/internal/storage/workspace"
 )
 
+// TestNativeTrayMinimizeRestoreAndDirectExit 验证任务栏保留、标题栏收托盘及关闭退出的原生窗口行为。
+// 参数 t：测试上下文；只创建并操作本测试的 Windows 窗口，不关闭用户软件。
 func TestNativeTrayMinimizeRestoreAndDirectExit(t *testing.T) {
 	// 真正创建 Windows 窗口并发送关闭消息，不调用 Codex 或数据库。
 	runtime.LockOSThread()
@@ -39,6 +41,18 @@ func TestNativeTrayMinimizeRestoreAndDirectExit(t *testing.T) {
 	isWindow := desktop.DesktopUser32.NewProc("IsWindow")
 	visible := desktop.DesktopUser32.NewProc("IsWindowVisible")
 	desktop.DesktopUser32.NewProc("ShowWindow").Call(hwnd, windows.SW_SHOWNOACTIVATE)
+	// 任务栏发送的普通最小化必须保留可见窗口样式，不能删除任务栏入口。
+	send.Call(hwnd, 0x0112, 0xf020, 0)
+	if shown, _, _ := visible.Call(hwnd); shown == 0 {
+		t.Fatal("任务栏最小化误隐藏窗口，导致底部图标消失")
+	}
+	if minimized, _, _ := desktop.DesktopWindowIconic.Call(hwnd); minimized == 0 {
+		t.Fatal("任务栏最小化未遵守 Windows 标准行为")
+	}
+	// 再次从任务栏恢复原窗口，不创建新实例或改变托盘注册。
+	send.Call(hwnd, 0x0112, 0xf120, 0)
+	// 标题栏来源会在非客户区鼠标处理期间标记；这里验证后续系统命令的实际效果。
+	tray.CaptionMinimizePending = true
 	send.Call(hwnd, 0x0112, 0xf020, 0)
 	if valid, _, _ := isWindow.Call(hwnd); valid == 0 {
 		t.Fatal("最小化销毁了原窗口")

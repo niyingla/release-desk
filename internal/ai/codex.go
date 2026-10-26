@@ -66,6 +66,10 @@ func (s *Service) StartVerify(req VerifyRequest) error {
 	if item.Kind != "verify" {
 		return errors.New("请选择变更与验证记录")
 	}
+	// 旧单项入口也遵守人工分类，不因绕开新版列表就消耗模型额度。
+	if err := RequireAutomaticVerification([]workspace.Item{item}); err != nil {
+		return err
+	}
 
 	if s.Scan != nil && s.Scan.Running {
 		// 扫描和验收共享一个 Codex 占用，避免两个任务争用同一版本结果。
@@ -153,7 +157,7 @@ func (s *Service) VerifyInBackground(ctx context.Context, exe string, req Verify
 
 	// 调用失败属于“证据不足”，不能当作业务失败或上线通过。
 	if err != nil {
-		result = workspace.VerifyResult{Status: "证据不足", Summary: err.Error(), Environment: "生产", Window: req.Start + " ~ " + req.End, Evidence: []string{}, NextSteps: "检查代码仓库、Codex 登录和只读取证权限后重新验证"}
+		result = workspace.VerifyResult{Status: "证据不足", Confirmation: "未确认", Blocker: "取证受阻", Summary: err.Error(), Environment: "生产", Window: req.Start + " ~ " + req.End, Evidence: []string{}, NextSteps: "检查代码仓库、Codex 登录和只读取证权限后重新验证"}
 	}
 
 	result.At = workspace.Stamp()
@@ -204,6 +208,13 @@ func (s *Service) CompleteSingleVerify(result workspace.VerifyResult) {
 // 参数 config：已经校验的本机配置快照；调用期间保持一致。
 // 返回：返回结构化验收结果；进程、超时、输出读取或证据检查失败时返回错误。
 func (s *Service) InvokeCodex(parent context.Context, exe string, req VerifyRequest, item workspace.Item, config workspace.Settings) (workspace.VerifyResult, error) {
+	// 网络阻断不是业务失败；先在同一只读权限下预检，再消耗模型额度。
+	ReportVerificationProgress(parent, "正在预检日志网络与只读权限，尚未调用 AI")
+	if err := s.preflightVerificationNetwork(parent, exe, config); err != nil {
+		return workspace.VerifyResult{}, err
+	}
+	ReportVerificationProgress(parent, "日志网络预检通过；查询权限和实际样本由本轮 AI 取证确认")
+	// 每项继续独立核验，不能把同批网络可达或他项通过当成本项业务证据。
 	// 每次调用使用唯一目录，隔离旧结果。
 	// Schema 来自软件内嵌资源，不接受记录内容更改输出结构。
 	// 结果路径由应用创建，不由业务字段指定。
@@ -233,11 +244,23 @@ func (s *Service) InvokeCodex(parent context.Context, exe string, req VerifyRequ
 	ctx, cancel := context.WithTimeout(parent, policy.CodexTimeoutMinutes*time.Minute)
 	defer cancel()
 
-	cmd := process.Command(ctx, exe, "exec", "--sandbox", "read-only", "--ephemeral", "--color", "never", "--output-schema", schemaPath, "-o", outputPath, "-C", config.CodeRepository, "-")
-	cmd.Stdin = strings.NewReader(VerificationPrompt(req.Version, item, req.Start, req.End, config))
+	// 文件仍只读；只给本次进程开放配置中的日志主机，密钥由既有只读脚本加载。
+	permissions, err := VerificationPermissionArguments(config)
+	if err != nil {
+		// 权限构造失败立即结束，不尝试取消沙箱限制继续运行。
+		return workspace.VerifyResult{}, err
+	}
+	args := append([]string{"exec", "--json"}, permissions...)
+	args = append(args, "--ephemeral", "--color", "never", "--output-schema", schemaPath, "-o", outputPath, "-C", config.CodeRepository, "-")
+	cmd := process.Command(ctx, exe, args...)
+	// 同一工作区锁下读取人工发布背景，其他验证项的结论不会被拼进输入。
+	s.Mu.Lock()
+	publication := s.Versions[req.Version].Version
+	s.Mu.Unlock()
+	cmd.Stdin = strings.NewReader(VerificationPrompt(req.Version, item, req.Start, req.End, config, publication))
 
-	// 原始事件流可能含生产正文，不保存 stdout/stderr，只消费脱敏结构化结果。
-	cmd.Stdout = io.Discard
+	// JSONL 只消费明确可公开的进度摘要，原始事件与 stderr 均不落盘。
+	cmd.Stdout = newVerificationEventWriter(ctx, func(summary string) { ReportVerificationProgress(ctx, summary) })
 
 	cmd.Stderr = io.Discard
 	if err = process.RunManagedCommand(cmd); err != nil {
@@ -268,8 +291,12 @@ func ReadVerificationResult(path string) (workspace.VerifyResult, error) {
 	}
 
 	// 状态与环境都经过校验，格式正确也不能代替实际证据。
-	if !slices.Contains([]string{"通过", "失败", "证据不足"}, result.Status) || result.Environment != "生产" {
+	if !slices.Contains([]string{"通过", "失败", "证据不足", "未发现异常"}, result.Status) || result.Environment != "生产" {
 		return result, errors.New("Codex 结论或环境无效")
+	}
+	// 新字段只接受协议内值；空值兼容旧版历史和本机测试结果。
+	if !slices.Contains([]string{"", "直接确认", "高概率确认", "未确认"}, result.Confirmation) || !slices.Contains([]string{"", "取证受阻", "无适用样本", "版本关联不足", "关键证据缺失"}, result.Blocker) {
+		return result, errors.New("Codex 确认方式或不足原因无效")
 	}
 
 	// 不限制证据种类或固定关键词，只排除空白占位，防止空数组伪装成已核验。
@@ -280,6 +307,16 @@ func ReadVerificationResult(path string) (workspace.VerifyResult, error) {
 		}
 	}
 	result.Evidence = evidence
+	// 中立状态也必须实际查过日志；工具失败或空白依据不能伪装成“没发现问题”。
+	if result.Status == "未发现异常" && (!result.LogQuerySucceeded || result.Confirmation != "未确认" || result.Blocker == "取证受阻" || len(evidence) == 0) {
+		result.Status = "证据不足"
+		result.Summary = "尚无成功查询及有效观察依据，不能标为未发现异常"
+	}
+	// 允许高概率判断，但不能把模型明确未确认的结论显示成已通过。
+	if result.Status == "通过" && (result.Confirmation == "未确认" || result.Blocker != "") {
+		result.Status = "证据不足"
+		result.Summary = "本轮仍存在决定性证据缺口，尚未确认目标实现"
+	}
 	// 有结论但没有任何可读依据时，保留待补证语义，不替模型编造验证结果。
 	if result.Status == "通过" && (len(result.Evidence) == 0 || strings.TrimSpace(result.Summary) == "") {
 		result.Status = "证据不足"
@@ -325,7 +362,7 @@ func (s *Service) FinishVerification(ctx context.Context, req VerifyRequest, sna
 		version = workspace.Clone(version)
 		current = version.Items[index]
 		current.VerifyRuns = append(current.VerifyRuns, result)
-		current.VerifyState = "待验证"
+		current.VerifyState = workspace.PendingVerificationState(current)
 		if workspace.VerificationHash(current) == workspace.VerificationHash(snapshot) {
 			current.VerifyState = result.Status
 			current.Data["result"] = FormatResult(result)
@@ -356,6 +393,14 @@ func FormatResult(result workspace.VerifyResult) string {
 	// 生成适合单项复制的纯文本，保留查询窗口与后续补证步骤。
 	// 分项分析沿用同一纯文本格式，复制结果与任务历史都能核对判断过程。
 	analysis := result.Analysis.Text()
+	// 确认方式属于本轮证据快照，间接判断不能在复制时伪装成直接复现。
+	if result.Confirmation != "" {
+		analysis = "确认方式：" + result.Confirmation + "\n" + analysis
+	}
+	// 不足分类用于区分网络故障和实际缺样本，不能在复制时丢失可操作原因。
+	if result.Blocker != "" {
+		analysis = "不足原因：" + result.Blocker + "\n" + analysis
+	}
 	if analysis != "" {
 		analysis = "\n" + analysis
 	}

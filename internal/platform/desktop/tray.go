@@ -11,24 +11,26 @@ import (
 
 // Windows 消息与通知区协议值集中定义，避免在窗口回调中散布魔数。
 const (
-	TrayCallbackMessage   = 0x8000 + 17
-	WindowSystemCommand   = 0x0112
-	WindowCloseMessage    = 0x0010
-	WindowFinalDestroy    = 0x0082
-	WindowMinimizeCommand = 0xf020
-	TrayLeftButtonUp      = 0x0202
-	TrayLeftDoubleClick   = 0x0203
-	TrayRightButtonUp     = 0x0205
-	TrayContextMenu       = 0x007b
-	WindowNullMessage     = 0x0000
-	TrayMenuRestore       = 1
-	TrayMenuExit          = 2
-	MenuReturnCommand     = 0x0100
-	MenuRightButton       = 0x0002
-	TrayAdd               = 0
-	TrayDelete            = 2
-	TrayFlags             = 1 | 2 | 4
-	TrayIconID            = 1
+	TrayCallbackMessage     = 0x8000 + 17
+	WindowSystemCommand     = 0x0112
+	WindowCloseMessage      = 0x0010
+	WindowFinalDestroy      = 0x0082
+	WindowMinimizeCommand   = 0xf020
+	WindowNonClientLeftDown = 0x00a1
+	WindowMinimizeHit       = 8
+	TrayLeftButtonUp        = 0x0202
+	TrayLeftDoubleClick     = 0x0203
+	TrayRightButtonUp       = 0x0205
+	TrayContextMenu         = 0x007b
+	WindowNullMessage       = 0x0000
+	TrayMenuRestore         = 1
+	TrayMenuExit            = 2
+	MenuReturnCommand       = 0x0100
+	MenuRightButton         = 0x0002
+	TrayAdd                 = 0
+	TrayDelete              = 2
+	TrayFlags               = 1 | 2 | 4
+	TrayIconID              = 1
 )
 
 // notifyIconData 与 Windows NOTIFYICONDATAW 字段布局一致，使用 Unicode 提示文字。
@@ -51,13 +53,14 @@ type NotifyIconData struct {
 }
 
 type DesktopTray struct {
-	Window         uintptr
-	Callback       uintptr
-	TaskbarMessage uintptr
-	Data           NotifyIconData
-	Registered     bool
-	OwnedIcon      bool
-	OnExit         func()
+	Window                 uintptr
+	Callback               uintptr
+	TaskbarMessage         uintptr
+	Data                   NotifyIconData
+	Registered             bool
+	OwnedIcon              bool
+	OnExit                 func()
+	CaptionMinimizePending bool
 }
 
 var TrayShell = windows.NewLazySystemDLL("shell32.dll")
@@ -99,6 +102,9 @@ func InstallDesktopTray(hwnd uintptr, onExit func()) (*DesktopTray, error) {
 	t.Data = NotifyIconData{Window: hwnd, ID: TrayIconID, Flags: TrayFlags, Message: TrayCallbackMessage}
 	t.Data.Size = uint32(unsafe.Sizeof(t.Data))
 	t.Data.Icon, t.OwnedIcon = LoadTrayIcon()
+	// 主窗口显式绑定同一份 EXE 图标，使标题栏和 Alt+Tab 与桌面、托盘一致。
+	SetWindowIcons(hwnd, t.Data.Icon)
+	slog.Debug("主窗口已同步应用图标")
 	// 提示只说明操作用途，不把当前版本或数据库信息放到系统通知区。
 	tip, _ := windows.UTF16FromString("Release Desk · 点击恢复；右键菜单可退出")
 	copy(t.Data.Tip[:], tip)
@@ -158,6 +164,8 @@ func (t *DesktopTray) Close() {
 	}
 	// 系统共享图标不能销毁，只有 ExtractIcon 创建的句柄需要释放。
 	if t.OwnedIcon {
+		// 窗口与托盘共用该句柄，释放前先解绑，避免窗口引用已销毁的资源。
+		SetWindowIcons(t.Window, 0)
 		DesktopUser32.NewProc("DestroyIcon").Call(t.Data.Icon)
 		t.OwnedIcon = false
 		// 清除所有权标记，后续销毁消息不能再次释放同一个句柄。
@@ -222,13 +230,23 @@ func (t *DesktopTray) ShowContextMenu() {
 // 参数 reference：系统保留参数，本实现不使用、不解释为业务数据。
 // 返回：已消费消息返回 0；其他消息返回原窗口处理器结果。
 func (t *DesktopTray) HandleMessage(hwnd, message, wParam, lParam, subclassID, reference uintptr) uintptr {
+	// 标题栏按钮由 DefSubclassProc 跟踪鼠标释放并同步发出系统命令。
+	// 仅在该调用期间标记来源；移出按钮或取消点击后不能污染下一次任务栏操作。
+	if message == WindowNonClientLeftDown && wParam == WindowMinimizeHit {
+		t.CaptionMinimizePending = true
+		defer func() { t.CaptionMinimizePending = false }()
+		result, _, _ := DefaultTraySubclass.Call(hwnd, message, wParam, lParam)
+		return result
+	}
 	// 右键只打开原生菜单，不能先恢复窗口或直接中断正在运行的任务。
 	if message == TrayCallbackMessage && (lParam == TrayRightButtonUp || lParam == TrayContextMenu) {
 		t.ShowContextMenu()
 		return 0
 	}
-	// 只有图标注册成功才隐藏窗口；系统托盘故障时仍可从任务栏恢复。
-	if message == WindowSystemCommand && wParam&0xfff0 == WindowMinimizeCommand && t.Add() {
+	// 只有标题栏“－”且图标注册成功才隐藏；任务栏或键盘最小化交回 Windows。
+	if message == WindowSystemCommand && wParam&0xfff0 == WindowMinimizeCommand && t.CaptionMinimizePending && t.Add() {
+		// 来源只消费一次，恢复后点击任务栏不得继续沿用旧标记。
+		t.CaptionMinimizePending = false
 		// SW_HIDE 去掉任务栏按钮；恢复入口保留在右下角通知区。
 		ShowDesktopWindow.Call(hwnd, windows.SW_HIDE)
 		slog.Info("主窗口已收进系统托盘")

@@ -1,6 +1,8 @@
 package aiservice
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -44,7 +46,15 @@ func (a *Service) AIVerify(body []byte) (any, error) {
 	if e != nil {
 		return nil, e
 	}
-	return nil, a.StartVerify(req)
+	// 单项入口统一入队，后续独立事项可以并发，仍保持扫描与 SQL 的互斥。
+	exe := FindCodex()
+	if exe == "" {
+		return nil, errors.New("未找到 Codex CLI，请先安装并登录")
+	}
+	return a.EnqueueVerification(req, func(ctx context.Context, request VerifyRequest, item workspace.Item, config workspace.Settings) (workspace.VerifyResult, error) {
+		// 每项仍使用同一只读验证协议，结果按自己的版本、事项和窗口保存。
+		return a.InvokeCodex(ctx, exe, request, item, config)
+	})
 }
 
 // AIPrompt 返回可复制到独立对话的验证提示词。
@@ -66,10 +76,10 @@ func (a *Service) AIPrompt(body []byte) (any, error) {
 	s.Mu.Lock()
 
 	defer s.Mu.Unlock()
-	_, item, _, e := s.Find(req.Version, req.ID)
+	version, item, _, e := s.Find(req.Version, req.ID)
 
 	if e != nil {
 		return nil, e
 	}
-	return VerificationPrompt(req.Version, item, req.Start, req.End, s.Config()), nil
+	return VerificationPrompt(req.Version, item, req.Start, req.End, s.Config(), version.Version), nil
 }

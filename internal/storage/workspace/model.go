@@ -27,7 +27,7 @@ var Fields = map[string][][2]string{
 	"config": {{"filename", "文件名称"}, {"prefix", "配置前缀"}, {"content", "配置内容"}, {"required", "是否必须配置"}, {"description", "描述"}},
 	"sql":    {{"name", "脚本名称"}, {"phase", "SQL 类型（自动识别）"}, {"side", "所属端"}, {"database", "数据库说明"}, {"order", "同类型内顺序"}, {"sql", "SQL 内容"}, {"rollback", "回滚 SQL / 说明"}, {"description", "描述"}},
 	"topic":  {{"topic", "Topic 名称"}, {"partitions", "分区数"}, {"group", "消费组"}, {"description", "变更描述"}},
-	"verify": {{"title", "修改事项"}, {"change", "修改内容"}, {"steps", "参考验证方式"}, {"keywords", "参考日志线索"}, {"expected", "参考预期结果"}, {"result", "实际验证结果"}},
+	"verify": {{"title", "修改事项"}, {"change", "修改内容"}, {"verification_mode", "验证方式"}, {"manual_reason", "需手动验证原因"}, {"steps", "参考验证步骤"}, {"keywords", "参考日志线索"}, {"expected", "参考预期结果"}, {"result", "实际验证结果"}},
 }
 
 type Item struct {

@@ -1,6 +1,7 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +12,51 @@ import (
 	"release-desk/internal/storage/fileio"
 	"release-desk/internal/storage/workspace"
 )
+
+// TestRetryVerificationPreservesHistory 验证失败与证据不足重试后追加历史并持久化新结论。
+// 参数 t：测试上下文；只操作临时版本文件，不调用 Codex 或查询生产环境。
+func TestRetryVerificationPreservesHistory(t *testing.T) {
+	for _, status := range []string{"证据不足", "失败"} {
+		t.Run(status, func(t *testing.T) {
+			// 使用独立数据目录，验证真实持久化逻辑而不触碰用户发版记录。
+			store, err := workspace.OpenStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous := workspace.VerifyResult{Status: status, Summary: "首次验证结论", Evidence: []string{"首次证据"}}
+			item := workspace.Item{ID: "retry-item", Kind: "verify", VerifyState: status, VerifyRuns: []workspace.VerifyResult{previous}, Data: map[string]string{"title": "重试事项", "change": "修复目标", "result": FormatResult(previous)}}
+			version := workspace.VersionFile{Format: "release-desk-version", Schema: 1, Version: workspace.Version{Name: "qa-retry"}, Items: []workspace.Item{item}}
+			// 保存第一次结论，重试必须基于该记录追加，不能覆盖整段历史。
+			if err := store.Save(version); err != nil {
+				t.Fatal(err)
+			}
+			// 保存会补齐默认动作与状态；启动快照须与生产入口一样从已保存记录读取。
+			_, item, _, err = store.Find(version.Version.Name, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next := workspace.VerifyResult{Status: "通过", Summary: "补证后达到目标", Environment: "生产", Evidence: []string{"本轮独立证据"}}
+			// 模拟已经完成的只读核验；正常结果仍通过生产代码的回填与条件校验。
+			service := &Service{Store: store}
+			if err := service.FinishVerification(context.Background(), VerifyRequest{Version: version.Version.Name, ID: item.ID}, item, next); err != nil {
+				t.Fatal(err)
+			}
+			// 重新打开磁盘记录，不能只检查内存中追加成功。
+			reopened, err := workspace.OpenStore(store.Dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, got, _, err := reopened.Find(version.Version.Name, item.ID)
+			if err != nil || len(got.VerifyRuns) != 2 || got.VerifyState != "通过" {
+				t.Fatalf("重试结果或历史未保存：%+v %v", got, err)
+			}
+			// 原证据和新证据必须分属两次运行，不能把旧结论充当本轮结果。
+			if got.VerifyRuns[0].Status != status || got.VerifyRuns[0].Summary != previous.Summary || got.VerifyRuns[0].Evidence[0] != "首次证据" || got.VerifyRuns[1].Evidence[0] != "本轮独立证据" || !strings.Contains(got.Data["result"], next.Summary) {
+				t.Fatal("重试覆盖旧历史或未更新本轮结果")
+			}
+		})
+	}
+}
 
 // TestSingleVerifyAcceptsMissingHints 验证缺少固定线索仍可提交 AI 自主分析。
 // 参数 t：Go 测试上下文；临时无效 CLI 保证不会启动真实模型或查询生产。

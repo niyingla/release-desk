@@ -20,6 +20,7 @@ import (
 	webview "github.com/jchv/go-webview2"
 	"golang.org/x/sys/windows"
 
+	aiservice "release-desk/internal/ai"
 	gitrepo "release-desk/internal/git/repository"
 	"release-desk/internal/identity"
 	"release-desk/internal/platform/desktop"
@@ -47,8 +48,18 @@ func Main() {
 
 	serve := flag.Bool("serve", false, "仅启动本机服务，用于界面测试")
 	check := flag.Bool("check", false, "检查数据与连接（只读，不执行 SQL）")
+	probeDomain := flag.String("probe-log-network", "", "只检查日志主机网络，不启动桌面或读取业务文件")
 
 	flag.Parse()
+	// 预检子进程不争用主窗口锁、不恢复数据，也不写日志；退出码只表示网络可达性。
+	if *probeDomain != "" {
+		// 返回非零让外层沙箱预检阻止收费模型启动，不输出底层网络诊断或本机配置。
+		if err := aiservice.ProbeLogNetwork(*probeDomain); err != nil {
+			// 专用退出码由调用方解释，不弹出交互窗口阻塞后台预检。
+			os.Exit(1)
+		}
+		return
+	}
 	// 项目工具链和安装包与用户数据分开，更新 EXE 不会覆盖发布记录。
 	if err := run(*data, *serve, *check); err != nil {
 		slog.Error("应用启动失败", "error", err)

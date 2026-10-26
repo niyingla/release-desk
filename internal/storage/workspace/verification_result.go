@@ -4,14 +4,17 @@ import "strings"
 
 // VerifyResult 保存 AI 的本轮结论与证据；Analysis 可省略以兼容旧版历史。
 type VerifyResult struct {
-	Status      string                `json:"status"`
-	Summary     string                `json:"summary"`
-	Environment string                `json:"environment"`
-	Window      string                `json:"window"`
-	Evidence    []string              `json:"evidence"`
-	NextSteps   string                `json:"next_steps"`
-	At          string                `json:"at"`
-	Analysis    *VerificationAnalysis `json:"analysis,omitempty"`
+	Status            string                `json:"status"`
+	Confirmation      string                `json:"confirmation,omitempty"`
+	Blocker           string                `json:"blocker,omitempty"`
+	LogQuerySucceeded bool                  `json:"log_query_succeeded,omitempty"`
+	Summary           string                `json:"summary"`
+	Environment       string                `json:"environment"`
+	Window            string                `json:"window"`
+	Evidence          []string              `json:"evidence"`
+	NextSteps         string                `json:"next_steps"`
+	At                string                `json:"at"`
+	Analysis          *VerificationAnalysis `json:"analysis,omitempty"`
 }
 
 // VerificationAnalysis 分开记录目标、代码判断、日志发现和综合理由，不限定 AI 的核验方法。

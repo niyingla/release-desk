@@ -42,6 +42,8 @@
       document.body.appendChild(preview);
     }
     // 用户填写的配置和 SQL 必须作为纯文本，HTML 标签也原样展示。
+    preview.querySelector(".cell-preview-heading").firstChild.textContent =
+      cell.dataset.previewTitle || "完整内容";
     preview.querySelector(".cell-preview-content").textContent = text;
     preview.hidden = false;
     preview.querySelector(".cell-preview-content").scrollTop = 0;

@@ -182,7 +182,8 @@ func MatchDBRules(names []string, side string, rules map[string][]string) []stri
 		}
 	}
 
-	sort.Strings(out)
+	// 同前缀按数字尾号升序；服务商、独立租户和共享库使用同一规则。
+	sort.SliceStable(out, func(i, j int) bool { return databaseNameLess(out[i], out[j]) })
 
 	return out
 }

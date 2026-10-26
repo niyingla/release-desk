@@ -145,7 +145,7 @@ func (a *Service) SaveItem(body []byte) (any, error) {
 			r.OnlineAt = old.OnlineAt
 			r.VerifyState = old.VerifyState
 			if workspace.VerificationHash(old) != workspace.VerificationHash(r) {
-				r.VerifyState = "待验证"
+				r.VerifyState = workspace.PendingVerificationState(r)
 			}
 			v.Items[i] = r
 			return nil, s.Save(v)
@@ -158,7 +158,7 @@ func (a *Service) SaveItem(body []byte) (any, error) {
 	r.Online = "待上线"
 
 	r.OnlineAt = ""
-	r.VerifyState = "待验证"
+	r.VerifyState = workspace.PendingVerificationState(r)
 
 	r.VerifyRuns = nil
 

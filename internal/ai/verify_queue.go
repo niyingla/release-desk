@@ -38,6 +38,7 @@ func (s *Service) StartVerifyQueue(req VerifyQueueRequest, run VerificationRunne
 		concurrency = policy.VerificationConcurrency
 	}
 	if concurrency < 1 || concurrency > policy.VerificationConcurrency {
+		// 直接调用接口也不能越过页面允许的全局模型并发上限。
 		return fmt.Errorf("验证并发数必须为 1～%d", policy.VerificationConcurrency)
 	}
 	items, err := s.SelectedItems(workspace.SelectionRequest{Version: req.Version, IDs: req.IDs}, "verify")
@@ -45,24 +46,55 @@ func (s *Service) StartVerifyQueue(req VerifyQueueRequest, run VerificationRunne
 	if err != nil {
 		return err
 	}
+	// 整组校验可自动取证性，禁止人工项随全选或旧客户端进入模型队列。
+	if err := RequireAutomaticVerification(items); err != nil {
+		return err
+	}
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	// 与扫描和 SQL 共用占用约束；逐项验收之间也不释放 AI 占用。
-	if s.Closing || s.AIBusy || s.SQLActive() {
+	if s.Closing || s.SQLActive() || s.Scan != nil && s.Scan.Running {
 		return errors.New("请等待当前任务完成后再启动批量验证")
 	}
+	// 已有验证队列可接收新的独立选择，保持本轮实际并发数，不另建超额工作者池。
+	if s.VerifyQueue != nil && s.VerifyQueue.Running {
+		// 停止请求已经确定了本轮边界，不能在其传播过程中继续追加。
+		if s.VerifyQueue.CancelRequested {
+			return errors.New("验证队列正在停止，请结束后重试")
+		}
+		_, err := s.appendVerificationSelectionLocked(s.VerifyQueue, VerifyRequest{Version: req.Version, Start: req.Start, End: req.End}, items)
+		return err
+	}
+	// 旧版单项任务仍按原有互斥收尾，不能在其结果写入前插入新队列。
+	if s.AIBusy {
+		return errors.New("请等待当前任务完成后再启动批量验证")
+	}
+	// 与逐项追加复用创建流程，工作者池使用同一并发上限与取消边界。
+	req.Concurrency = concurrency
+	return s.startVerificationQueueLocked(req, items, run)
+}
+
+// startVerificationQueueLocked 创建可追加队列并在保存成功后启动工作者。
+// 参数 req：已校验的版本、时间窗和并发数；参数 items：独立事项快照。
+// 参数 run：本队列固定的只读取证器；调用方必须持有工作区锁且确认空闲。
+// 返回：本地保存失败时不启动外部调用；成功后由队列统一管理占用。
+func (s *Service) startVerificationQueueLocked(req VerifyQueueRequest, items []workspace.Item, run VerificationRunner) error {
+	// 执行器必须在创建前具备，缺失时不登记一个永远无法执行的收费任务。
+	if run == nil {
+		return errors.New("验证执行器不可用")
+	}
 	// 启动前记住用户明确选择的偏好；保存失败不启动任何外部模型。
-	if err := s.RememberVerificationConcurrency(concurrency); err != nil {
+	if err := s.RememberVerificationConcurrency(req.Concurrency); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(s.TaskContext)
 	// 批次取消与整个软件退出各有上下文，不会影响用户其他 Codex 对话。
 	s.VerifyQueueCancel = cancel
-	// 勾选项少于用户上限时只建立必要工作者，但仍记住用户原先的选择。
-	queue := &workspace.VerifyQueue{ID: identity.NewID(), Version: req.Version, Running: true, Concurrency: min(concurrency, len(items)), Rows: []workspace.VerifyQueueRow{}}
+	// 空闲工作者等待后续追加；只限制实际取证数，不因首批只有一项退化成串行。
+	queue := &workspace.VerifyQueue{ID: identity.NewID(), Version: req.Version, Running: true, Concurrency: req.Concurrency, Changed: make(chan struct{})}
 	for _, item := range items {
 		// 启动前登记全部事项，用户从第一项开始就能看到完整等待队列。
-		queue.Rows = append(queue.Rows, workspace.VerifyQueueRow{ItemID: item.ID, Title: item.Data["title"], State: "等待中", Condition: VerificationCondition(VerifyRequest{Version: req.Version, Start: req.Start, End: req.End}, item)})
+		appendVerificationWork(queue, VerifyRequest{Version: req.Version, ID: item.ID, Start: req.Start, End: req.End}, item)
 	}
 	s.VerifyQueue = queue
 	s.SingleVerify = nil
@@ -79,27 +111,24 @@ func (s *Service) StartVerifyQueue(req VerifyQueueRequest, run VerificationRunne
 	s.Revision++
 	// 后台持有固定条件，结果回填仍需比较当前事项摘要。
 	// 历史逐项保存，后续某项失败不会回退已经完成的验收。
-	go s.RunVerifyQueue(ctx, queue, req, items, s.Config(), run)
+	go s.RunVerifyQueue(ctx, queue, s.Config(), run)
 	return nil
 }
 
 // RunVerifyQueue 以固定工作者池核验勾选项，有空位立即补充下一项。
 // 参数 ctx：批次取消上下文，停止按钮或退出软件都会取消。
 // 参数 queue：已占用运行标记的批次对象，进度写入受记录锁保护。
-// 参数 req：统一版本和时间窗口，不按条目猜测生产部署时间。
-// 参数 items：启动时固定的事项快照，用于摘要匹配和逐项回填。
 // 参数 config：固定的非凭据设置，包含代码仓库与日志技能位置。
 // 参数 run：单项只读验收器，失败不当作业务未上线。
 // 不返回业务值；每项真实结论与历史仍写入原版本事项。
-func (s *Service) RunVerifyQueue(ctx context.Context, queue *workspace.VerifyQueue, req VerifyQueueRequest, items []workspace.Item, config workspace.Settings, run VerificationRunner) {
+func (s *Service) RunVerifyQueue(ctx context.Context, queue *workspace.VerifyQueue, config workspace.Settings, run VerificationRunner) {
 	// 子上下文同时覆盖所有工作者；本地保存失败也必须阻止后续收费调用。
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// 最后一个工作者退出后才释放占用，不能在停止请求刚发出时插入新批次。
 	defer s.CompleteVerifyQueue(queue)
 	// 日志只记录规模和并发度，不包含生产证据正文。
-	slog.Info("批量 AI 验证开始", "version", req.Version, "count", len(items), "concurrency", queue.Concurrency)
-	jobs := make(chan int)
+	slog.Info("AI 验证队列开始", "version", queue.Version, "concurrency", queue.Concurrency)
 	var workers sync.WaitGroup
 	// 不为每条事项创建协程，待验证项只保留索引，避免长列表占满进程资源。
 	for range queue.Concurrency {
@@ -107,28 +136,26 @@ func (s *Service) RunVerifyQueue(ctx context.Context, queue *workspace.VerifyQue
 		// 每个工作者只处理当前领取的事项，不共享 CLI 输出文件或可变业务快照。
 		go func() {
 			defer workers.Done()
-			for index := range jobs {
+			for {
+				// 在同一把锁下领取与标记，追加和工作者补位不会重复取走同一事项。
+				index, work, ok := s.takeVerificationWork(ctx, queue)
+				if !ok {
+					return
+				}
 				// 独立事项在锁外取证，只有进度和最终写回才持有工作区锁。
-				if !s.RunVerifyQueueItem(ctx, queue, index, req, items[index], config, run) {
+				req := VerifyQueueRequest{Version: work.Version, Start: work.Start, End: work.End}
+				if !s.RunVerifyQueueItem(ctx, queue, index, req, work.Item, config, run) {
 					// 单项持久化异常或取消需要广播给其余工作者，普通业务失败已在内部处理。
+					s.Mu.Lock()
+					queue.CancelRequested = true
+					s.Mu.Unlock()
 					cancel()
 					return
 				}
 			}
 		}()
 	}
-	// 无缓冲派发让可用工作者立即补位，停止后最多只取到一项未开始的索引。
-dispatch:
-	for index := range items {
-		// 取消后即使同时有空位，工作者仍会在登记开始前复核上下文。
-		select {
-		case <-ctx.Done():
-			break dispatch
-		case jobs <- index:
-		}
-	}
 	// 等待已开始的全部取证退出，才能把运行标记和任务历史转成终态。
-	close(jobs)
 	workers.Wait()
 }
 
@@ -143,6 +170,8 @@ func (s *Service) UpdateVerifyQueue(queue *workspace.VerifyQueue, index int, sta
 	// 队列和版本文件各自承担进度与证据职责，进度变更不等于验收已保存。
 	queue.Rows[index].State, queue.Rows[index].Detail = state, detail
 	queue.Rows[index].Result = result
+	// 广播变更而非轮询；有追加或某项完成时，空闲工作者立即重新领取。
+	notifyVerificationQueue(queue)
 	// 并发完成顺序与行号无关，必须遍历真实状态计算已完成和运行中数量。
 	done, active := 0, 0
 	for _, row := range queue.Rows {
@@ -172,6 +201,18 @@ func (s *Service) CompleteVerifyQueue(queue *workspace.VerifyQueue) {
 	// 结束时一次释放 AI 占用，不让其他任务插入两项验收之间。
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
+	// 结束与下一轮入队共用临界区，旧工作者退出不能清除新队列的占用。
+	s.completeVerificationQueueLocked(queue)
+}
+
+// completeVerificationQueueLocked 原子结束队列并释放占用。
+// 参数 queue：待收尾的队列；调用方必须持有 Mu，重复收尾或旧队列不改变当前任务。
+// 不返回业务值；完成历史与停止语义按原规则保留。
+func (s *Service) completeVerificationQueueLocked(queue *workspace.VerifyQueue) {
+	// 最后一个活动项完成与新事项入队在同一把锁下决定，不存在接受后丢单的间隙。
+	if s.VerifyQueue != queue || !queue.Running {
+		return
+	}
 	// 尚未查询的项保持未验证语义，不为它们生成失败结论或验证历史。
 	for i := range queue.Rows {
 		if queue.Rows[i].State == "等待中" {
@@ -179,6 +220,8 @@ func (s *Service) CompleteVerifyQueue(queue *workspace.VerifyQueue) {
 		}
 	}
 	queue.Running = false
+	// 队列已无执行者需要快照，释放正文内存；证据仍保存在正式记录中。
+	queue.Work = nil
 	s.TrackTask("verify")
 	// 批次终态与 AI 占用同锁更新，后续编辑不会观察到半完成状态。
 	s.AIBusy = false

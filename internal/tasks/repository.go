@@ -15,13 +15,20 @@ import (
 )
 
 type Row struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	State     string   `json:"state"`
-	Detail    string   `json:"detail"`
-	Condition string   `json:"condition,omitempty"`
-	Evidence  []string `json:"evidence,omitempty"`
-	Children  []Row    `json:"children,omitempty"`
+	ID        string          `json:"id"`
+	Title     string          `json:"title"`
+	State     string          `json:"state"`
+	Detail    string          `json:"detail"`
+	Condition string          `json:"condition,omitempty"`
+	Evidence  []string        `json:"evidence,omitempty"`
+	Children  []Row           `json:"children,omitempty"`
+	Progress  []ProgressEntry `json:"progress,omitempty"`
+}
+
+// ProgressEntry 是可公开的核验行动与发现摘要，不保存内部推理或原始工具响应。
+type ProgressEntry struct {
+	At      string `json:"at"`
+	Summary string `json:"summary"`
 }
 type Record struct {
 	StopRequested bool   `json:"stop_requested,omitempty"`

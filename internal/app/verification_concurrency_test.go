@@ -180,9 +180,18 @@ func TestVerifyQueueRunsSixAndRefillsSlots(t *testing.T) {
 	for range 6 {
 		seen[nextVerificationStart(t, started)] = true
 	}
-	// 批次仍持有工作区占用，不能重复提交另一组六并发任务。
-	if err := ai.StartVerifyQueue(req, nil); err == nil {
-		t.Fatal("运行中允许重复启动整个验证批次")
+	// 重复提交同一批选择合并到原队列，不创建另一组六并发或重复收费。
+	s.Mu.Lock()
+	queueID := s.VerifyQueue.ID
+	s.Mu.Unlock()
+	if err := ai.StartVerifyQueue(req, nil); err != nil {
+		t.Fatalf("重复选择应合并：%v", err)
+	}
+	s.Mu.Lock()
+	unchanged := s.VerifyQueue.ID == queueID && len(s.VerifyQueue.Rows) == len(req.IDs)
+	s.Mu.Unlock()
+	if !unchanged {
+		t.Fatal("重复提交创建了新队列或重复事项")
 	}
 	select {
 	case id := <-started:

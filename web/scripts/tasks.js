@@ -87,13 +87,25 @@ async function renderTaskDetail() {
     ),
   );
   const hasRows = Boolean(body.querySelector("[data-task-row]"));
+  // 顶部实时展示最近的可公开摘要，完整条件和依据仍保留在对应事项内。
+  const latest = (record.rows || [])
+    .flatMap((row) =>
+      (row.progress || []).map((entry) => ({ ...entry, title: row.title })),
+    )
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .at(-1);
   $(".modal-head h2").textContent = record.title;
   $(".modal-head p").textContent =
     `${record.version} · ${taskKindLabels[record.kind]} · ${record.status}`;
-  body.innerHTML = `<div class="bulk-progress-summary">${record.running ? '<span class="spinner"></span>' : icon(record.status === "已完成" ? "check" : "file")}<b>${escapeHTML(record.status)}</b><span>${escapeHTML(record.progress)}</span></div><div class="source-note">开始：${escapeHTML(taskTime(record.started))}　结束：${escapeHTML(taskTime(record.finished))}</div>${taskRows(record.rows || [], opened, hasRows)}`;
+  updateProgressView(
+    body,
+    `<div class="bulk-progress-summary">${record.running ? '<span class="spinner"></span>' : icon(record.status === "已完成" ? "check" : "file")}<b>${escapeHTML(record.status)}</b><span>${escapeHTML(record.progress)}</span></div>${latest ? `<div class="verification-current"><strong>${escapeHTML(latest.title)}</strong><span>${escapeHTML(latest.summary)}</span></div>` : ""}<div class="source-note">开始：${escapeHTML(taskTime(record.started))}　结束：${escapeHTML(taskTime(record.finished))}</div>${taskRows(record.rows || [], opened, hasRows)}`,
+  );
   body.scrollTop = scroll;
-  $(".modal-foot").innerHTML =
-    `${record.running ? button("task-stop", "停止任务", "", "danger", `data-id="${escapeHTML(record.id)}" ${record.status === "正在停止" ? "disabled" : ""}`) : ""}${button("close-modal", "收起")}`;
+  updateProgressView(
+    $(".modal-foot"),
+    `${record.running ? button("task-stop", "停止任务", "", "danger", `data-id="${escapeHTML(record.id)}" ${record.status === "正在停止" ? "disabled" : ""}`) : ""}${button("close-modal", "收起")}`,
+  );
 }
 
 /**
@@ -108,7 +120,11 @@ function taskRows(rows, opened, restored, prefix = "") {
   return rows
     .map((row, index) => {
       const key = `${prefix}${row.id || index}`;
-      return `<details class="bulk-preview-item task-result" data-task-row="${escapeHTML(key)}" ${!restored || opened.has(key) ? "open" : ""}><summary><span>${escapeHTML(row.title)}</span>${badge(row.state)}</summary>${row.condition ? `<div class="source-note task-text">${escapeHTML(row.condition)}</div>` : ""}${row.detail ? `<pre class="code task-text" data-copy="${escapeHTML(row.detail)}">${escapeHTML(row.detail)}</pre>` : ""}${row.evidence?.length ? `<ul class="task-evidence">${row.evidence.map((entry) => `<li>${escapeHTML(entry)}</li>`).join("")}</ul>` : ""}${taskRows(row.children || [], opened, restored, key + "/")}</details>`;
+      // 任务详情也提供逐项取消；只对当前队列中相同稳定行 ID 生效。
+      const pending = state.verify_queue?.rows.find(
+        (entry) => entry.id === row.id,
+      );
+      return `<details class="bulk-preview-item task-result" data-task-row="${escapeHTML(key)}" ${!restored || opened.has(key) ? "open" : ""}><summary><span>${escapeHTML(row.title)}</span>${badge(row.state)}${pending ? queuedVerificationCancelButton(pending) : ""}</summary>${verificationProgressHTML(row.progress)}${row.condition ? `<div class="source-note task-text">${escapeHTML(row.condition)}</div>` : ""}${row.detail ? `<pre class="code task-text" data-copy="${escapeHTML(row.detail)}">${escapeHTML(row.detail)}</pre>` : ""}${row.evidence?.length ? `<ul class="task-evidence">${row.evidence.map((entry) => `<li>${escapeHTML(entry)}</li>`).join("")}</ul>` : ""}${taskRows(row.children || [], opened, restored, key + "/")}</details>`;
     })
     .join("");
 }

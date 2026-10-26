@@ -159,6 +159,7 @@ func pendingStatement(ctx context.Context, access Access, op Operation) (string,
 		return op.SQL, actual.Exists, nil
 	}
 	pending := []string{}
+	changes := alterChanges{objects: map[string]bool{}}
 	for _, clause := range op.Clauses {
 		matches := true
 		present := false
@@ -171,10 +172,13 @@ func pendingStatement(ctx context.Context, access Access, op Operation) (string,
 			}
 		}
 		// ADD 已有对象只免除重复 DDL，绝不免除最终类型、默认值和索引定义核对。
-		if matches || (clause.SkipExisting && present) {
+		// 前序保留的子句若会改变本项依据，不能继续沿用执行前的存在性或位置。
+		if !changes.affects(clause) && (matches || (clause.SkipExisting && present)) {
 			continue
 		}
 		pending = append(pending, clause.SQL)
+		// 只记录实际保留的动作，省略项不会改变数据库对象状态。
+		changes.record(clause)
 	}
 	if len(pending) == 0 {
 		return "", true, nil

@@ -1,33 +1,74 @@
 {
   "type": "object",
   "properties": {
-    "status": { "type": "string", "enum": ["通过", "失败", "证据不足"] },
-    "summary": { "type": "string" },
-    "environment": { "type": "string", "enum": ["生产"] },
-    "window": { "type": "string" },
-    "evidence": { "type": "array", "items": { "type": "string" } },
+    "status": {
+      "type": "string",
+      "enum": ["通过", "失败", "证据不足", "未发现异常"]
+    },
+    "confirmation": {
+      "type": "string",
+      "enum": ["直接确认", "高概率确认", "未确认"],
+      "description": "通过时说明直接验证还是依据代码与生产信号高概率确认；无可靠结论时为未确认。"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["生产"]
+    },
+    "window": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "analysis": {
       "type": "object",
       "description": "AI 根据代码与日志自主分析，字段仅解释依据，不规定成功关键词或核验算法。",
       "properties": {
-        "goal": { "type": "string" },
-        "code": { "type": "string" },
-        "logs": { "type": "string" },
-        "reasoning": { "type": "string" }
+        "goal": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "logs": {
+          "type": "string"
+        },
+        "reasoning": {
+          "type": "string"
+        }
       },
       "required": ["goal", "code", "logs", "reasoning"],
       "additionalProperties": false
     },
-    "next_steps": { "type": "string" }
+    "next_steps": {
+      "type": "string"
+    },
+    "blocker": {
+      "type": "string",
+      "enum": ["", "取证受阻", "无适用样本", "版本关联不足", "关键证据缺失"]
+    },
+    "log_query_succeeded": {
+      "type": "boolean",
+      "description": "本轮至少一次实际日志查询成功返回，包含真实零命中；查询失败或未查询为false。"
+    }
   },
   "required": [
     "status",
+    "confirmation",
     "summary",
     "environment",
     "window",
     "evidence",
     "analysis",
-    "next_steps"
+    "next_steps",
+    "blocker",
+    "log_query_succeeded"
   ],
   "additionalProperties": false
 }

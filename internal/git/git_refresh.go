@@ -110,7 +110,9 @@ func (a *Service) CollectSQLUpdates(version workspace.VersionFile) ([]SQLUpdate,
 }
 
 // ApplySQLUpdates 再次核对当前内容后保存刷新结果，保留排序和回滚说明，SQL 类型按新正文重算。
-// 参数 name：版本名；updates：经过来源摘要比较的候选；result：前序统计与冲突清单。
+// 参数 name：需要刷新 SQL 来源的版本名。
+// 参数 updates：经过来源摘要比较的候选，不包含未核对的工作区正文。
+// 参数 result：前序刷新统计与冲突清单，保存后补充最终数量。
 // 返回：最终统计；保存失败或刷新期间开始执行时返回错误，不替换旧快照。
 func (a *Service) ApplySQLUpdates(name string, updates []SQLUpdate, result SQLRefresh) (any, error) {
 	// 只改 SQL 原文与来源信息，不改变所属端和用户排序；类型由新正文重新识别。

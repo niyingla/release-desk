@@ -117,7 +117,14 @@ async function copyText(text) {
  * @returns {*} 当前展示结果；渲染方法只更新界面，不自动执行数据库或发布。
  */
 function badge(text) {
-  const color = ["已上线", "已完成", "已发布", "成功", "通过"].includes(text)
+  const color = [
+    "已上线",
+    "已完成",
+    "已发布",
+    "成功",
+    "通过",
+    "通过（高概率）",
+  ].includes(text)
     ? "green"
     : ["失败", "部分失败", "已中断", "结构不一致", "有失败"].includes(text)
       ? "red"
@@ -125,7 +132,18 @@ function badge(text) {
             text,
           )
         ? "purple"
-        : ["待上线", "待验证", "证据不足", "待核验", "已停止"].includes(text)
+        : [
+              "待上线",
+              "待验证",
+              "证据不足",
+              "待核验",
+              "已停止",
+              "需手动验证",
+              "取证受阻",
+              "无适用样本",
+              "版本关联不足",
+              "关键证据缺失",
+            ].includes(text)
           ? "amber"
           : "";
   return `<span class="badge ${color}"><span class="dot"></span>${escapeHTML(text || "待处理")}</span>`;
@@ -425,11 +443,138 @@ const columns = {
 function fieldValue(item, field) {
   if (field === "service" || field === "action") return item[field];
   if (field === "execution") return sqlStatus(item);
-  if (field === "verification") return item.verify_state || "待验证";
+  if (field === "verification")
+    return (
+      verificationQueueRow(item)?.state ||
+      verificationStatusLabel(
+        item.verify_state ||
+          (needsManualVerification(item) ? "需手动验证" : "待验证"),
+        item.verify_runs?.at(-1),
+      )
+    );
   // 旧版本文件没有声明配置要求，不能当作已有默认值的可选配置。
   if (item.kind === "config" && field === "required")
     return item.data.required || state.config_requirements[0];
   return item.data[field] || "";
+}
+
+/**
+ * 判断是否有不允许追加验证的任务，运行中的验证队列仍可接收独立事项。
+ * @returns {boolean} 扫描、SQL、旧单项任务或停止中为 true；后端仍做最终校验。
+ */
+function verificationBusy() {
+  // 放开验证队列追加，不改变扫描、SQL 和退出时的原有互斥。
+  return Boolean(
+    (state.ai_busy && !state.verify_queue?.running) ||
+    state.scan?.running ||
+    state.single_verify?.running ||
+    (state.verify_queue?.running && state.verify_queue.cancel_requested) ||
+    state.batch?.running ||
+    state.sql_queue?.running,
+  );
+}
+
+/**
+ * 定位当前事项正在等待或验证的独立队列行，兼容旧版没有逐行版本的历史。
+ * @param {object} item 当前表格事项；同名 ID 仍须匹配当前版本。
+ * @returns {object|undefined} 正在处理的队列行；已经结束不遮盖原事项的真实结论。
+ */
+function verificationQueueRow(item) {
+  const queue = state.verify_queue;
+  if (!queue?.running) return;
+  return queue.rows.find(
+    (row) =>
+      (row.version || queue.version) === currentVersion &&
+      row.item_id === item.id &&
+      ["等待中", "验证中"].includes(row.state),
+  );
+}
+
+/**
+ * 读取扫描或用户明确声明的人工方式，历史证据不足不自动改变分类。
+ * @param {object} item 当前版本独立验证事项。
+ * @returns {boolean} 关键结果需人工观察时为 true。
+ */
+function needsManualVerification(item) {
+  return (
+    item.kind === "verify" &&
+    (item.data.verification_mode === "手动验证" ||
+      (!item.data.verification_mode && item.verify_state === "需手动验证"))
+  );
+}
+
+/**
+ * 为状态悬停提供本项关键结论与证据，不把上轮结论当作本轮结果。
+ * @param {object} item 当前版本的验证事项，历史按实际保存顺序追加。
+ * @returns {string} 可滚动预览的纯文本；没有结果时明确说明尚待取证。
+ */
+function verificationStatusPreview(item) {
+  const row = verificationQueueRow(item);
+  const status = fieldValue(item, "verification");
+  const latest = item.verify_runs?.at(-1);
+  const parts = [`当前状态：${status}`];
+  if (needsManualVerification(item))
+    parts.push(
+      `需手动验证：${item.data.manual_reason || "关键结果无法通过自动日志取证确认"}`,
+      `操作方向：${item.data.steps || item.data.expected || "编辑事项补充人工验证步骤"}`,
+    );
+  // 正在排队或取证时先展示本轮进展，历史依据另行标识。
+  if (row)
+    parts.push(row.progress?.at(-1)?.summary || row.detail || "等待开始取证");
+  if (latest) {
+    if (row || status === "待验证")
+      parts.push("历史结论（不代表当前验证已通过）：");
+    parts.push(verificationResultText(latest));
+  } else if (item.data.result && !row && status !== "待验证") {
+    // 兼容没有结构化历史的早期记录，保持当时保存的原文。
+    parts.push(item.data.result);
+  } else
+    parts.push(
+      needsManualVerification(item)
+        ? "请按人工步骤核对；本项不支持自动验证。"
+        : "尚无验证结论或证据，可点击行尾“验证”开始取证。",
+    );
+  return parts.join("\n\n");
+}
+
+/**
+ * 生成仅针对一个等待项的撤销入口，不停止同队列其他事项。
+ * @param {object} row 有独立 ID 的本轮队列行；已开始的行不生成撤销按钮。
+ * @returns {string} 绑定队列与行身份的按钮 HTML，旧历史或非等待项为空。
+ */
+function queuedVerificationCancelButton(row) {
+  if (!state.verify_queue?.running || row.state !== "等待中" || !row.id)
+    return "";
+  return `<button class="text-link" data-action="cancel-queued-verify" data-queue-id="${escapeHTML(state.verify_queue.id)}" data-row-id="${escapeHTML(row.id)}" title="取消此项排队，不调用 Codex，不影响其他事项；保留原有验证结论。">取消</button>`;
+}
+
+/**
+ * 为待验证事项及未通过的结论生成行内入口。
+ * @param {object} item 当前行事项，待验证可直接启动，失败或证据不足可重试。
+ * @returns {string} 绑定稳定事项 ID 的按钮；其他类型或结论返回空字符串。
+ */
+function verificationRetryButton(item) {
+  if (item.kind !== "verify") return "";
+  // 手动项只保留编辑及复制，不显示任何付费自动验证入口。
+  if (needsManualVerification(item)) return "";
+  // 只禁用当前正在处理的事项，其他独立事项仍可继续加入队列。
+  const row = verificationQueueRow(item);
+  if (row?.state === "等待中") return queuedVerificationCancelButton(row);
+  if (row?.state === "验证中")
+    return '<button class="text-link" disabled title="此项正在验证，其他事项仍可加入队列。">验证中</button>';
+  if (
+    !["待验证", "证据不足", "失败", "未发现异常"].includes(
+      item.verify_state || "待验证",
+    )
+  )
+    return "";
+  // 点击后仍需确认查询时间；历史结论只追加，不因打开弹窗而清除。
+  const busy = verificationBusy();
+  const retry = ["证据不足", "失败", "未发现异常"].includes(item.verify_state);
+  const help = busy
+    ? "其他任务正在运行，完成或停止后可重试；历史验证结果保留。"
+    : "重新选择日志时间范围，由 AI 结合代码与日志再次验证；保留历史结果，会使用 Codex 额度。";
+  return `<button class="text-link" data-action="${retry ? "retry-verify" : "verify-item"}" data-id="${escapeHTML(item.id)}" title="${escapeHTML(help)}" ${busy ? "disabled" : ""}>${retry ? "重试" : "验证"}</button>`;
 }
 
 /**
@@ -443,6 +588,12 @@ function renderVersion() {
     return renderOverview();
   }
   const items = v.items.filter((r) => r.kind === currentKind);
+  // 稳定分组保留各组原有顺序；人工项统一位于自动验证列表尾部。
+  if (currentKind === "verify")
+    items.sort(
+      (a, b) =>
+        Number(needsManualVerification(a)) - Number(needsManualVerification(b)),
+    );
   syncBulkSelection(v);
   const canBulk = ["sql", "verify"].includes(currentKind);
   if (currentKind === "sql")
@@ -485,11 +636,17 @@ function renderVersion() {
                 r.kind === "job" && key === "frequency"
                   ? ReleaseCron.display(value)
                   : value;
-              return `<td data-copy="${escapeHTML(value)}"${key === "frequency" ? ` data-preview="${escapeHTML(display)}"` : ""}>${["execution", "verification", "action"].includes(key) ? badge(value) : `<span class="cell-text ${["handler", "frequency", "prefix", "topic", "group"].includes(key) ? "mono" : ""}">${escapeHTML(display || "—")}</span>`}</td>`;
+              const preview =
+                key === "verification"
+                  ? ` data-preview="${escapeHTML(verificationStatusPreview(r))}" data-preview-title="关键结论与证据"`
+                  : key === "frequency"
+                    ? ` data-preview="${escapeHTML(display)}"`
+                    : "";
+              return `<td data-copy="${escapeHTML(value)}"${preview}>${["execution", "verification", "action"].includes(key) ? badge(value) : `<span class="cell-text ${["handler", "frequency", "prefix", "topic", "group"].includes(key) ? "mono" : ""}">${escapeHTML(display || "—")}</span>`}</td>`;
             })
             .join(
               "",
-            )}<td>${["job", "config"].includes(currentKind) ? `<button class="state-button" data-action="online" data-id="${escapeHTML(r.id)}" title="点击切换线上状态">${badge(r.online || "待上线")}</button>` : `<button class="text-link" data-action="edit-item" data-id="${escapeHTML(r.id)}">编辑</button>`}</td></tr>`,
+            )}<td>${["job", "config"].includes(currentKind) ? `<button class="state-button" data-action="online" data-id="${escapeHTML(r.id)}" title="点击切换线上状态">${badge(r.online || "待上线")}</button>` : `<div class="row-actions"><button class="text-link" data-action="edit-item" data-id="${escapeHTML(r.id)}">编辑</button>${verificationRetryButton(r)}</div>`}</td></tr>`,
       )
       .join(
         "",
@@ -546,8 +703,7 @@ function renderDetail() {
           ? "steps"
           : "description";
   let code = r.data[primary] || "暂无详细内容";
-  if (currentKind === "verify")
-    code = `修改内容\n${r.data.change || "—"}\n\n验证方式\n${r.data.steps || "—"}\n\n日志检索条件\n${r.data.keywords || "—"}\n\n预期结果\n${r.data.expected || "—"}${r.data.result ? "\n\n最近验证结果\n" + r.data.result : ""}`;
+  if (currentKind === "verify") code = verificationItemText(r);
   const codeHTML = highlight(code, currentKind)
     .split("\n")
     .map(
@@ -589,7 +745,7 @@ function renderDetail() {
               ["标记时间", r.online_at],
             ];
   $("#detail").innerHTML =
-    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? button("execute", "一键执行", "play", "primary") + button("retry", "重试失败库", "refresh") + button("check-structure", "仅核验结构", "check") + button("history", "执行明细", "clock") : ""}${currentKind === "verify" ? button("verify", "AI 智能验证", "spark", "primary") + button("copy-prompt", "复制 AI 验证提示词", "copy") : button("copy-detail", currentKind === "config" ? "复制配置" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
+    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? button("execute", "一键执行", "play", "primary") + button("retry", "重试失败库", "refresh") + button("check-structure", "仅核验结构", "check") + button("history", "执行明细", "clock") : ""}${currentKind === "verify" ? verificationDetailActions(r) : button("copy-detail", currentKind === "config" ? "复制配置" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${k}</dt><dd>${escapeHTML(v)}</dd>`)
       .join(
@@ -856,6 +1012,7 @@ function showItemForm(item = null) {
         "steps",
         "keywords",
         "expected",
+        "manual_reason",
         "result",
       ].includes(key);
       const opts = {
@@ -863,21 +1020,25 @@ function showItemForm(item = null) {
         full: multiline,
         tall: ["sql", "content"].includes(key),
         select:
-          key === "side"
-            ? ["租户端", "服务商端", "平台端"]
-            : r.kind === "config" && key === "required"
-              ? state.config_requirements
-              : null,
+          key === "verification_mode"
+            ? ["自动验证", "手动验证"]
+            : key === "side"
+              ? ["租户端", "服务商端", "平台端"]
+              : r.kind === "config" && key === "required"
+                ? state.config_requirements
+                : null,
       };
       return formField(
         label,
         key,
         r.data[key] ||
-          (key === "order"
-            ? "1"
-            : key === "required"
-              ? state.config_requirements[0]
-              : ""),
+          (key === "verification_mode"
+            ? "自动验证"
+            : key === "order"
+              ? "1"
+              : key === "required"
+                ? state.config_requirements[0]
+                : ""),
         opts,
       );
     })
@@ -916,7 +1077,7 @@ async function showSettings() {
   showModal(
     "连接与设置",
     "测试和 UAT 连接独立保存，密码使用当前 Windows 用户加密；不使用的环境可留空。",
-    `<form id="settings-form">${sqlConnectionFields(profiles)}<div class="section-label">Git 与 Codex</div><div class="form-grid">${formField("SQL 仓库目录", "sql_repository", config.sql_repository, { full: true })}${formField("代码仓库目录", "code_repository", config.code_repository, { full: true })}${formField("Git 提交作者", "git_author", config.git_author)}${formField("日志技能文件", "log_skill", config.log_skill, { full: true })}</div><div class="notice info" style="margin-top:18px;margin-bottom:0">数据库匹配规则在本地 settings.json 中集中维护。修改后重启软件生效。<br>记录目录：${escapeHTML(state.data_dir)}</div></form>`,
+    `<form id="settings-form">${sqlConnectionFields(profiles)}<div class="section-label">Git 与 Codex</div><div class="form-grid">${formField("SQL 仓库目录", "sql_repository", config.sql_repository, { full: true })}${formField("代码仓库目录", "code_repository", config.code_repository, { full: true })}${formField("Git 提交作者", "git_author", config.git_author)}${formField("日志技能文件", "log_skill", config.log_skill, { full: true })}${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}</div><div class="notice info" style="margin-top:18px;margin-bottom:0">数据库匹配规则在本地 settings.json 中集中维护。修改后重启软件生效。<br>记录目录：${escapeHTML(state.data_dir)}</div></form>`,
     `${button("files", "版本文件夹", "folder")}${button("open-data", "数据目录", "folder")}${button("close-modal", "取消")}${button("save-settings", "保存设置", "check", "primary")}`,
   );
   $("#settings-form").config = config;
@@ -1010,17 +1171,19 @@ function renderProgress() {
     state.batch?.item_id === item?.id &&
     state.batch?.version === currentVersion &&
     (state.batch.environment || "test") === selectedSQLEnvironment;
-  const rows = useBatch
-    ? state.batch.rows
-    : state.history
-        .filter(
-          (r) =>
-            r.version === currentVersion &&
-            r.item_id === item?.id &&
-            (r.environment || "test") === selectedSQLEnvironment,
-        )
-        .slice()
-        .reverse();
+  const rows = orderedDatabaseRows(
+    useBatch
+      ? state.batch.rows
+      : state.history
+          .filter(
+            (r) =>
+              r.version === currentVersion &&
+              r.item_id === item?.id &&
+              (r.environment || "test") === selectedSQLEnvironment,
+          )
+          .slice()
+          .reverse(),
+  );
   const runningTask = useBatch
     ? (state.tasks || []).find(
         (task) =>
@@ -1052,16 +1215,25 @@ function dateTimeLocal(date) {
 }
 /**
  * 展示单项生产日志验收条件与时间选择。
+ * @param {boolean} retry 是否从未通过记录重新验证；只调整弹窗说明，不复用旧结论。
  * @returns {*} 当前展示结果；渲染方法只更新界面，不自动执行数据库或发布。
  */
-function showVerify() {
+function showVerify(retry = false) {
   const r = selectedItem();
-  if (!r) return;
+  if (!r || r.kind !== "verify") return;
+  if (needsManualVerification(r))
+    return toast("此项需手动验证，请查看原因和人工验证步骤", true);
+  // 重试与首次验证共用后端流程，确认前不改状态、不消耗模型额度。
+  if (retry && verificationBusy())
+    return toast("请等待当前任务完成或停止后重试", true);
   showModal(
-    "AI 智能验证",
-    "先集合对应版本代码与生产日志，再由 AI 综合判断业务目标。",
-    `<div class="notice info">AI 先核对代码改动与生产日志，再自主判断是否达到业务目的。预填条件仅供参考，可按真实证据调整；未命中关键词会尝试其他相关取证方式，查不到日志会说明原因。结果分别保留代码判断、日志发现和综合理由。会使用已登录的 Codex 额度。</div><div class="form-grid">${formField("开始时间（北京时间）", "verify-start", dateTimeLocal(new Date(Date.now() - 3600000)), { type: "datetime-local" })}${formField("结束时间（北京时间）", "verify-end", dateTimeLocal(new Date()), { type: "datetime-local" })}</div><div class="section-label">${escapeHTML(itemTitle(r))} · ${escapeHTML(r.service || "由 AI 定位涉及服务")}</div><pre class="code">${escapeHTML(`修改：${r.data.change || "由 AI 结合版本代码分析"}\n参考验证方式：${r.data.steps || "由 AI 自主选择"}\n参考日志线索：${r.data.keywords || "由 AI 按需定位"}\n参考预期：${r.data.expected || "由 AI 推导业务目的"}`)}</pre>`,
-    `${button("close-modal", "取消")}${button("start-verify", "启动 Codex 验证", "spark", "primary")}`,
+    retry ? "重试 AI 验证" : "AI 智能验证",
+    retry
+      ? "重新取证并追加验证历史，原有结论在新结果保存前保留。"
+      : "先集合对应版本代码与生产日志，再由 AI 综合判断业务目标。",
+    `${retry ? '<div class="notice info">本次重新分析代码与日志，保留所有历史结果。可调整下方时间范围，或取消后编辑事项以补充取证线索。</div>' : ""}<div class="notice info">AI 先核对代码改动与生产日志，再自主判断是否达到业务目的。预填条件仅供参考，可按真实证据调整；未命中关键词会尝试其他相关取证方式，查不到日志会说明原因。结果分别保留代码判断、日志发现和综合理由。会使用已登录的 Codex 额度。</div><div class="form-grid">${verificationRangeControl("verify")}${formField("开始时间（北京时间）", "verify-start", dateTimeLocal(new Date(Date.now() - 3600000)), { type: "datetime-local" })}${formField("结束时间（北京时间）", "verify-end", dateTimeLocal(new Date()), { type: "datetime-local" })}</div><div class="section-label">${escapeHTML(itemTitle(r))} · ${escapeHTML(r.service || "由 AI 定位涉及服务")}</div><pre class="code">${escapeHTML(`修改：${r.data.change || "由 AI 结合版本代码分析"}\n参考验证方式：${r.data.steps || "由 AI 自主选择"}\n参考日志线索：${r.data.keywords || "由 AI 按需定位"}\n参考预期：${r.data.expected || "由 AI 推导业务目的"}`)}</pre>`,
+    // 确认按钮固定目标，后台刷新选中行后也不能验证成另一条记录。
+    `${button("close-modal", "取消")}${button("start-verify", retry ? "加入重试队列" : "启动 Codex 验证", "spark", "primary", `data-version="${escapeHTML(currentVersion)}" data-id="${escapeHTML(r.id)}" data-retry="${retry}"`)}`,
   );
 }
 /**
@@ -1086,7 +1258,12 @@ function showVerifyRunning() {
  * @returns {string} 包含结论、代码、日志、综合理由及补证方向的纯文本。
  */
 function verificationResultText(result) {
-  const parts = [result.status, result.summary];
+  const parts = [
+    result.status,
+    result.confirmation ? `确认方式：${result.confirmation}` : "",
+    result.blocker ? `不足原因：${result.blocker}` : "",
+    result.summary,
+  ];
   // 展示模型实际给出的分析，不在界面按关键词重新计算通过或失败。
   const analysis = result.analysis;
   if (analysis) {
@@ -1515,6 +1692,9 @@ async function handleAction(action, element) {
       );
       break;
     }
+    case "copy-verification":
+      await copyText(verificationItemText(selectedItem()));
+      break;
     case "copy-prompt": {
       const now = new Date();
       const prompt = await api("ai/prompt", {
@@ -1574,6 +1754,9 @@ async function handleAction(action, element) {
         code_repository: data.code_repository,
         git_author: data.git_author,
         log_skill: data.log_skill,
+        verification_log_domains: data.verification_log_domains
+          .split(/[，,\s]+/)
+          .filter(Boolean),
       });
       closeModal();
       toast("设置已保存");
@@ -1634,16 +1817,44 @@ async function handleAction(action, element) {
     case "verify":
       showVerify();
       break;
-    case "start-verify":
-      await api("ai/verify", {
+    case "verify-item":
+    case "retry-verify":
+      // 行内操作优先定位点击的事项，不能误用原先展开详情的行。
+      selectedID = element.dataset.id;
+      showVerify(action === "retry-verify");
+      break;
+    case "cancel-queued-verify":
+      // 稳定行身份防止旧页面撤销同一事项后来创建的新一轮重试。
+      await api("ai/verify/cancel-queued", {
+        queue_id: element.dataset.queueId,
+        row_id: element.dataset.rowId,
+      });
+      await refresh(true);
+      toast("已取消此项排队，其他任务继续处理");
+      break;
+    case "start-verify": {
+      // 提交时使用弹窗固定的版本与事项，回显进度也跟随同一目标。
+      currentVersion = element.dataset.version;
+      selectedID = element.dataset.id;
+      const receipt = await api("ai/verify", {
         version: currentVersion,
         id: selectedID,
         start: $("[name=verify-start]").value,
         end: $("[name=verify-end]").value,
       });
       await refresh(true);
-      showVerifyRunning();
+      if (receipt?.queue_id) {
+        // 重试提交后回到列表，用户可直接继续点击其他项，无需逐个等待弹窗结束。
+        closeModal();
+        toast(
+          receipt.accepted
+            ? "已加入验证队列，可继续添加其他事项"
+            : "此项已在队列中，不会重复执行",
+        );
+        if (element.dataset.retry !== "true") showBulkProgress("verify");
+      } else showVerifyRunning();
       break;
+    }
     case "backup": {
       const path = await api("backup");
       toast(`备份已导出：${path}`);
@@ -1716,6 +1927,7 @@ document.addEventListener("input", (event) => {
   }
 });
 document.addEventListener("change", (event) => {
+  if (applyVerificationRange(event.target)) return;
   if (event.target.id === "sql-environment") {
     // 切换视图清除旧预览；运行任务的连接由后端快照固定，不受选择框影响。
     selectedSQLEnvironment = event.target.value;

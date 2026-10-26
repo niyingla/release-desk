@@ -120,10 +120,11 @@ func NormalizeItem(item *Item) error {
 	if !slices.Contains([]string{"待上线", "已上线"}, item.Online) {
 		return errors.New("线上发布状态无效")
 	}
-	if item.VerifyState == "" {
-		item.VerifyState = "待验证"
+	if item.VerifyState == "" || NeedsManualVerification(*item) && item.VerifyState == "待验证" {
+		item.VerifyState = PendingVerificationState(*item)
 	}
-	return nil
+	// 方式属于业务条件，不能让无效扫描分类进入自动执行入口。
+	return ValidateVerificationMode(*item)
 }
 
 // ValidateSQLMetadata 校验 SQL 所属端、内容与展示顺序。

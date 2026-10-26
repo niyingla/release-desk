@@ -28,6 +28,9 @@ func (a *App) handlers() map[string]endpoint {
 	// 批次预览、启动和停止各有独立端点，勾选或全选本身不能触发外部调用。
 
 	return map[string]endpoint{
+		// 逐项排队与并发偏好独立于 SQL 执行，均由本机鉴权入口保护。
+		"ai/verify/cancel-queued":  a.services().AI.CancelQueuedVerification,
+		"verification/concurrency": a.services().Settings.SaveVerificationConcurrency,
 		// 更新接口独立于业务任务，只查询公开发布信息或打开已校验的 GitHub 链接。
 		"update/check":    a.services().Updates.CheckEndpoint,
 		"update/open":     a.services().Updates.OpenEndpoint,

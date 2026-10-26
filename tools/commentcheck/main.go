@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+// main 执行方法说明、逐参数描述和方法体注释覆盖率检查，违规时阻止打包。
+// 无业务入参；仅静态解析业务源码，不运行或改写被检查的函数。
 func main() {
 	// 工具链、测试和生成资源不纳入业务代码统计范围。
 	files := []string{}
@@ -49,6 +51,11 @@ func main() {
 				return true
 			}
 			begin, end := set.Position(fn.Body.Lbrace).Line, set.Position(fn.Body.Rbrace).Line
+			// 方法体比例和方法说明分开检查，整体注释多也不能掩盖某个参数没有描述。
+			for _, problem := range documentationProblems(fn) {
+				violations++
+				fmt.Printf("DOC %s:%d %s %s\n", name, begin, fn.Name.Name, problem)
+			}
 			commentLines := map[int]bool{}
 			for _, group := range file.Comments {
 				for _, comment := range group.List {

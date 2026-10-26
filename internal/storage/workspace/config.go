@@ -18,6 +18,7 @@ type Settings struct {
 	CodeRepository          string              `json:"code_repository"`
 	GitAuthor               string              `json:"git_author"`
 	LogSkill                string              `json:"log_skill"`
+	VerificationLogDomains  []string            `json:"verification_log_domains,omitempty"`
 	ScopeRules              map[string][]string `json:"scope_rules"`
 }
 
@@ -28,7 +29,7 @@ func DefaultSettings() Settings {
 	// 这里集中的是用户已经指定的初始环境约定。
 
 	// 用户指定的初始路径集中在一个入口，换电脑后修改 settings.json 即可。
-	return Settings{VerificationConcurrency: policy.VerificationConcurrency, SQLRepository: `D:\workCode\db`, CodeRepository: `D:\codeWork\qiyu-douyin`, GitAuthor: "huohuo", LogSkill: filepath.Join(os.Getenv("USERPROFILE"), ".codex", "skills", "bamboo-tls-query", "SKILL.md"), ScopeRules: map[string][]string{"租户端": {`^newlink_share.*$`, `^newlink\d*$`}, "服务商端": {`^sp\d*$`}, "平台端": {`^newlink_pf$`}}}
+	return Settings{VerificationConcurrency: policy.VerificationConcurrency, VerificationLogDomains: []string{policy.DefaultVerificationLogDomain}, SQLRepository: `D:\workCode\db`, CodeRepository: `D:\codeWork\qiyu-douyin`, GitAuthor: "huohuo", LogSkill: filepath.Join(os.Getenv("USERPROFILE"), ".codex", "skills", "bamboo-tls-query", "SKILL.md"), ScopeRules: map[string][]string{"租户端": {`^newlink_share.*$`, `^newlink\d*$`}, "服务商端": {`^sp\d*$`}, "平台端": {`^newlink_pf$`}}}
 }
 
 // LoadSettings 读取或初始化本机设置。
@@ -75,6 +76,10 @@ func ValidateSettings(config Settings) error {
 	// 零值兼容旧调用方，实际启动时使用集中默认值；非零偏好必须在受控范围。
 	if config.VerificationConcurrency < 0 || config.VerificationConcurrency > policy.VerificationConcurrency {
 		return errors.New("验证并发数超出允许范围")
+	}
+	// 日志网络只允许显式主机，不能把 URL、通配符或账户信息当成域名。
+	if err := ValidateLogDomains(config.VerificationLogDomains); err != nil {
+		return err
 	}
 
 	for _, side := range []string{"租户端", "服务商端", "平台端"} {

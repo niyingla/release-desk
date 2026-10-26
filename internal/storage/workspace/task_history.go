@@ -143,7 +143,18 @@ func (s *Store) SaveVerifyTask() error {
 		queue := s.VerifyQueue
 		record = tasks.Record{ID: queue.ID, Kind: "verify", Version: queue.Version, Title: "批量 AI 验证", Running: queue.Running}
 		for _, row := range queue.Rows {
-			entry := tasks.Row{ID: row.ItemID, Title: row.Title, State: row.State, Detail: row.Detail, Condition: row.Condition}
+			// 新队列行 ID 能区分同一事项先取消再重试，旧记录仍兼容事项 ID。
+			rowID := row.ID
+			if rowID == "" {
+				rowID = row.ItemID
+			}
+			entry := tasks.Row{ID: rowID, Title: row.Title, State: row.State, Detail: row.Detail, Condition: row.Condition, Progress: row.Progress}
+			// 跨版本独立事项仍共用全局并发额度，回看时明确其实际归属。
+			if row.Version != "" && row.Version != queue.Version {
+				// 同一 ID 在不同版本独立保存，展开历史时不可相互混淆。
+				record.Version = "多个版本"
+				entry.Title = row.Version + " · " + row.Title
+			}
 			if row.Result != nil {
 				entry.Evidence = row.Result.Evidence
 				entry.Detail = formatTaskEvidence(*row.Result)
@@ -305,13 +316,18 @@ func taskOutcome(rows []tasks.Row, running bool) string {
 				return "已中断"
 			case "失败", "有失败", "保存失败", "结构不一致":
 				result = "有失败"
-			case "未执行", "未验证", "已停止", "未开始":
-				if result == "已完成" {
+			case "未执行", "未验证", "已停止", "已取消", "未开始":
+				if result != "有失败" {
 					result = "已停止"
 				}
 			case "证据不足", "待核验", "已跳过":
-				if result == "已完成" {
+				if result == "已完成" || result == "未发现异常" {
 					result = "证据不足"
+				}
+			case "未发现异常":
+				// 观察没有异常仍未验收通过；中立结论不能盖过失败、停止或证据不足。
+				if result == "已完成" {
+					result = "未发现异常"
 				}
 			}
 		}
@@ -342,6 +358,14 @@ func formatTaskEvidence(result VerifyResult) string {
 	// 后续建议属于当时验收结果，不能用当前修改后的条件重新生成。
 	// 生产证据不会混入公共运行日志，只保存到当前用户本地历史。
 	parts := []string{result.Summary}
+	// 任务回看与事项列表使用同一确认尺度，旧记录缺字段时保持原样。
+	if result.Confirmation != "" {
+		// 高概率与直接确认均为通过，但证据回看必须保留二者的区别。
+		parts = append(parts, "确认方式："+result.Confirmation)
+	}
+	if result.Blocker != "" {
+		parts = append(parts, "不足原因："+result.Blocker)
+	}
 	// 代码、日志与综合理由同结果一起留档，不能只保存最后的状态。
 	if result.Analysis != nil {
 		parts = append(parts, result.Analysis.Text())

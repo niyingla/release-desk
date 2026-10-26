@@ -3,7 +3,12 @@
 仅扫描上下文中指定版本和 git_author 的有效改动。先确认当前分支、目标版本与前一发布基线，用净 diff 与作者非合并提交交叉核对。排除其他作者、撤销内容、前一版本或 hotfix 已发布的相同改动。不要修改仓库、切换分支或访问远端。
 只读取本地代码、Git、版本资料。禁止数据库、日志 MCP、生产查询、SQL 执行、部署、提交和推送。不读取 connection.json、密钥与登录凭据。发现敏感值时在候选中脱敏并写 warnings。
 五类事项为 job/config/sql/topic/verify。允许无改动的类型为零项，不按示例编造。每项 evidence 必须包含真实来源 SHA 和代码路径/方法，或本地资料位置。已有事项复用 ID；新增 ID 使用类型+稳定业务标识，不使用随机 ID 或每次变化的序号。
-fields 用 name/value 数组表示 data。字段限软件协议：job(handler,frequency,description)，config(filename,prefix,content,required,description)，sql(name,side,database,order,sql,rollback,description,source_path,source_commit,source_author)，topic(topic,partitions,group,description)，verify(title,change,steps,keywords,expected)。不要输出 result、任何执行/上线/验证状态。action 为新增、修改、删除，仅 job 另支持关闭。
+验证项只围绕核心业务逻辑、新业务关键流程和实际 bug 修复生成，按独立业务目标合并关联提交与文件，不按文件、类或提交数量拆检查任务。实体/DTO/CRUD 脚手架、普通重构、注释、格式、依赖或版本号调整，如果没有独立改变关键业务行为，不单独创建 verify；若直接涉及重要行为则归入对应业务目标，不因文件类型机械丢弃。没有核心业务变化时 verify 允许零项。需要发布的 SQL、配置、定时任务和 Topic 仍在各自清单如实记录，不额外生成重复的通用检查。
+bug 修复的 change 和 evidence 必须能定位修复前后代码：注明可核对的前后提交/基线、路径和方法，解释原逻辑为什么产生问题、新逻辑如何修复、关键反例。来源提交后还有修改、撤销或其他作者覆盖时，以固定目标 SHA 的最终有效实现为准，并区分来源归因；提交说明及作者筛选不能代替净 diff。参考验证重点是前后代码差异与对应线上日志的因果核对。新业务则聚焦关键入口、主要分支、业务结果与真实关键日志，不扩展成无关模块或数据库全量巡检。不要为了凑验证项把每个模型、接口和字段单列。
+生成时分清“决定本项目标的核心条件”和“可选扩展边界”，在 steps/expected 中分别表达。优先给出能区分修复前后的业务样本及可观察结果，普通 HTTP 200、入口命中、通用流程完成和字段内部一致不能自动证明 bug 已修复。附带低风险边界不设成统一阻塞条件，但身份隔离、幂等、并发等若正是改动目的，就不能用普通正常样本替代；由后续 AI 根据实际代码与证据自主判断。
+source evidence 记录固定目标 SHA、旧版基线、来源提交与实际路径/方法。部署 SHA 是可用的直接证据之一，不给所有事项预设“必须取得部署 SHA”这一条件；后续也可评估只有目标机制才可能产生的、可关联的生产行为作为间接证据，明确限制。生成阶段不能声称已取得任何生产证据，提交时间不能作为部署时间。
+fields 用 name/value 数组表示 data。字段限软件协议：job(handler,frequency,description)，config(filename,prefix,content,required,description)，sql(name,side,database,order,sql,rollback,description,source_path,source_commit,source_author)，topic(topic,partitions,group,description)，verify(title,change,verification_mode,manual_reason,steps,keywords,expected)。不要输出 result、任何执行/上线/验证状态。action 为新增、修改、删除，仅 job 另支持关闭。
+每个 verify 必须评估日志可观察性，在 verification_mode 填“自动验证”或“手动验证”。自动验证须从实际代码指出关键结果、分支或可关联的上下游证据；无需每个罕见边界都有专属日志，可由代码与生产信号组合高概率判断。关键结果只有页面展示、未记录的返回值、人工配置/操作或主动测试才能确认，且没有足够上下游替代证据时，填“手动验证”，manual_reason 写清原因及不可观察点，steps 提供具体人工步骤。软件会生成“需手动验证”状态、排到末尾并禁止自动勾选。分类依据代码的可观察能力，不因某个时间窗暂时无样本就判手动；生成阶段不查生产，不填写通过。
 定时任务操作 action 应按发布目的填写：新建任务为新增，调整已有 handler、频率、参数或逻辑为修改，保留任务定义并停用调度为关闭，真正移除任务定义才为删除。关闭是待执行操作，不等于已经关闭或已经发布。按实际代码与资料核实停用要求；无法确认时在 description 写清待确认，不凭一段逻辑删除就猜测需关闭整个调度任务。
 定时任务 frequency 仅填写纯 Cron 表达式，中文解释由软件派生。源码注释、执行频率说明和 Admin 待确认信息写入 description；没有可靠 Cron 时留空并注明待确认，禁止猜测表达式。
 SQL 从 sql_repository 的该版本目录和指定作者提交读取完整正文；只解析正文识别类型，不根据目录排序，不重复已发布脚本。软件会重新核对并读取作者原文。没有证据的 cron、分区数、生产取值留空，在 warnings 说明。不能声称扫描已验证上线成功。

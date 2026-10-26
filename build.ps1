@@ -28,10 +28,16 @@ try {
     $taskSourcePaths = @('cmd','internal','web','build','tools','examples','go.mod','go.sum','build.ps1','package.json','.gitignore','使用说明.txt')
     if (Test-Path -LiteralPath (Join-Path $taskRoot 'package-lock.json')) { $taskSourcePaths += 'package-lock.json' }
     # 发布工作流与工程说明属于可重建源码；CI 不依赖本机工具链和私有运行数据。
-    foreach ($taskOptional in @('.github','readme.txt','.prettierignore')) {
+    foreach ($taskOptional in @('.github','readme.txt','.prettierignore','AGENTS.md')) {
         if (Test-Path -LiteralPath (Join-Path $taskRoot $taskOptional)) { $taskSourcePaths += $taskOptional }
     }
-    $taskSourceFiles = @($taskSourcePaths | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $taskRoot $_) -Recurse -File } | Sort-Object FullName)
+    # 示例采用公开白名单；本机业务示例及历史生成脚本虽然被 Git 忽略，也不能混入源码 ZIP。
+    $taskPublicExamples = @('template.json')
+    $taskSourceFilter = {
+        $taskRelative = [IO.Path]::GetRelativePath($taskRoot, $_.FullName).Replace('\','/')
+        -not $taskRelative.StartsWith('tools/examples/') -and (-not $taskRelative.StartsWith('examples/') -or $taskPublicExamples -contains [IO.Path]::GetFileName($taskRelative))
+    }
+    $taskSourceFiles = @($taskSourcePaths | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $taskRoot $_) -Recurse -File } | Where-Object $taskSourceFilter | Sort-Object FullName)
     $taskSourceHashes = @($taskSourceFiles | ForEach-Object { [ordered]@{path=[IO.Path]::GetRelativePath($taskRoot,$_.FullName).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
     $taskSourceZip = Join-Path $taskStage 'source.zip'
     Add-Type -AssemblyName System.IO.Compression
@@ -56,12 +62,13 @@ try {
     & $taskGo build -p 4 -trimpath -ldflags $taskLinkFlags -o (Join-Path $taskStage 'ReleaseDesk.exe') ./cmd/releasedesk
     if ($LASTEXITCODE -ne 0) { throw 'EXE 打包失败' }
     # 其他会话在构建期间修改源文件时拒绝发布，不能把不匹配的快照标成同一构建。
-    $taskAfterFiles = @($taskSourcePaths | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $taskRoot $_) -Recurse -File } | Sort-Object FullName)
+    $taskAfterFiles = @($taskSourcePaths | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $taskRoot $_) -Recurse -File } | Where-Object $taskSourceFilter | Sort-Object FullName)
     $taskAfterHashes = @($taskAfterFiles | ForEach-Object { [ordered]@{path=[IO.Path]::GetRelativePath($taskRoot,$_.FullName).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
     if ((ConvertTo-Json -InputObject $taskSourceHashes -Compress) -ne (ConvertTo-Json -InputObject $taskAfterHashes -Compress)) { throw '构建期间源码发生变化，请等其他会话完成后重试' }
     $taskExamples = Join-Path $taskStage 'examples'
     New-Item -ItemType Directory -Path $taskExamples -Force | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $taskRoot 'examples') -Filter '*.json' -File | Copy-Item -Destination $taskExamples -Force
+    # 安装包与源码使用同一公开模板清单，不能通过第二条打包路径带出业务版本文件。
+    foreach ($taskExample in $taskPublicExamples) { Copy-Item -LiteralPath (Join-Path $taskRoot ('examples/' + $taskExample)) -Destination $taskExamples -Force }
     Copy-Item -LiteralPath (Join-Path $taskRoot '使用说明.txt') -Destination $taskStage
     Copy-Item -LiteralPath $taskCatalogPath -Destination (Join-Path $taskStage '软件版本记录.json')
     $taskBuildRecord = [ordered]@{software_version=$taskVersion;build_id=$taskBuildID;built_at=$taskBuiltAt;source_sha256=$taskSourceSHA;source_files=$taskSourceHashes;checks=if($SkipTests){'skipped'}else{'go test -p 4 ./...; go vet -p 4 ./...; commentcheck passed'};git_revision=$null}
@@ -69,6 +76,9 @@ try {
     # 安装包只收录运行文件、说明和示例，不包含测试数据、源码备份与本机凭据。
     $taskArchive = Join-Path $taskStage ('ReleaseDesk-' + $taskVersion + '-Windows-x64.zip')
     Compress-Archive -LiteralPath @((Join-Path $taskStage 'ReleaseDesk.exe'), (Join-Path $taskStage '使用说明.txt'), (Join-Path $taskStage '软件版本记录.json'), (Join-Path $taskStage '构建记录.json'), $taskExamples) -DestinationPath $taskArchive
+    # 对已经生成的实际压缩包再次检查，避免只核对脚本规则却漏掉未来新增入口。
+    & $taskGo run ./tools/packagecheck $taskSourceZip $taskArchive
+    if ($LASTEXITCODE -ne 0) { throw '公开发布包内容检查失败' }
     # 校验表覆盖 EXE、安装包、源码包和构建记录，保留独立构建目录不覆盖旧包。
     @('ReleaseDesk.exe', [IO.Path]::GetFileName($taskArchive), 'source.zip', '构建记录.json', '软件版本记录.json') | ForEach-Object { $taskHash = (Get-FileHash -LiteralPath (Join-Path $taskStage $_) -Algorithm SHA256).Hash.ToLowerInvariant(); $taskHash + '  ' + $_ } | Set-Content -LiteralPath (Join-Path $taskStage 'SHA256SUMS.txt') -Encoding utf8
     $taskDist = Join-Path $taskRoot 'dist'

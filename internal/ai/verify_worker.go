@@ -20,15 +20,19 @@ func (s *Service) RunVerifyQueueItem(ctx context.Context, queue *workspace.Verif
 	// 开始状态和停止请求共用锁；已取消的索引保持等待，最后收为未验证。
 	s.Mu.Lock()
 	if ctx.Err() != nil || queue.CancelRequested || s.Closing {
+		// 已领取但尚未调用模型的项也应明确结束，不能遗留“验证中”。
+		s.UpdateVerifyQueue(queue, index, "已停止", "本轮验证在取证前停止", nil)
 		s.Mu.Unlock()
 		return false
 	}
-	// 登记开始后立即释放锁，不在模型或生产日志慢查询期间阻塞界面。
-	s.UpdateVerifyQueue(queue, index, "验证中", "正在结合版本代码与生产日志取证", nil)
+	// 开始状态已由领取器原子登记，立即释放锁，不阻塞页面追加事项。
 	s.Mu.Unlock()
 	request := VerifyRequest{Version: req.Version, ID: item.ID, Start: req.Start, End: req.End}
+	// 回调绑定队列与独立行号，六个并行调用的实时摘要不会串到其他事项。
+	ctx = context.WithValue(ctx, verificationProgressKey{}, func(summary string) { s.recordVerificationProgress(ctx, queue, index, summary) })
+	ReportVerificationProgress(ctx, "正在定位核心业务目标，对比修复前后代码并准备关键日志取证")
 	// 每项调用持有独立输出目录；未完成项不能借用其他项的证据。
-	// 起止时间共享批次窗口，具体服务和检索方式仍由各自 AI 按目标判断。
+	// 起止时间来自该项确认时的快照，不能借用最早入队事项的窗口。
 	result, err := run(ctx, request, item, config)
 	if ctx.Err() != nil {
 		// 故意忽略工具取消后返回的通过，不能把迟到结论写回版本。
@@ -37,7 +41,7 @@ func (s *Service) RunVerifyQueueItem(ctx context.Context, queue *workspace.Verif
 	}
 	if err != nil {
 		// 工具故障只表示证据不足，业务失败和不足仍允许继续领取后续项。
-		result = workspace.VerifyResult{Status: "证据不足", Summary: err.Error(), Environment: "生产", Window: req.Start + " ~ " + req.End, Evidence: []string{}, NextSteps: "补充代码和日志证据后重新验证"}
+		result = workspace.VerifyResult{Status: "证据不足", Confirmation: "未确认", Blocker: "取证受阻", Summary: err.Error(), Environment: "生产", Window: req.Start + " ~ " + req.End, Evidence: []string{}, NextSteps: "检查取证工具和网络后重试；已取得证据的缺口按实际结果补充"}
 	}
 	// 本轮时间和原始依据先写入事项历史，写盘成功后才显示最终状态。
 	result.At = workspace.Stamp()

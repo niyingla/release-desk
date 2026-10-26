@@ -111,13 +111,19 @@ func FindCodex() string {
 // 参数 start：日志查询开始时间，按北京时间解释，不代表发布已经成功。
 // 参数 end：日志查询结束时间，必须晚于开始时间。
 // 参数 config：已经校验的本机配置快照；调用期间保持一致。
+// 参数 publication：可选的用户维护版本快照，仅提供发布背景，不能代替部署制品证据。
 // 返回：返回包含代码定位、改动目标与参考线索的只读验证提示词，不含旧验证结论。
-func VerificationPrompt(version string, item workspace.Item, start, end string, config workspace.Settings) string {
+func VerificationPrompt(version string, item workspace.Item, start, end string, config workspace.Settings, publication ...workspace.Version) string {
 	// 提示词来自独立资源，便于审阅只读边界。
 
 	// 仓库与作者帮助 AI 定位目标改动，参考线索缺失不会限制其分析方法。
 	// 旧结论不是本轮证据，且不得把数据库连接或登录凭据传入模型。
-	payload, _ := json.MarshalIndent(map[string]any{"version": version, "action": item.Action, "service": item.Service, "change": workspace.VerificationData(item), "code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor, "start": start, "end": end, "timezone": "Asia/Shanghai"}, "", "  ")
+	data := map[string]any{"version": version, "action": item.Action, "service": item.Service, "change": workspace.VerificationData(item), "code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor, "start": start, "end": end, "timezone": "Asia/Shanghai"}
+	if len(publication) > 0 && publication[0].Name == version {
+		// 只传人工维护状态与日期，冗长备注和旧结论不能进入本轮推断。
+		data["publication"] = map[string]string{"status": publication[0].Status, "date": publication[0].Date, "source": "用户维护的发布背景，不是已核实的部署 SHA"}
+	}
+	payload, _ := json.MarshalIndent(data, "", "  ")
 	source, err := web.Assets.ReadFile("prompts/verification-prompt.txt")
 	if err != nil {
 		return fmt.Sprintf("验证模板不可用：%v", err)

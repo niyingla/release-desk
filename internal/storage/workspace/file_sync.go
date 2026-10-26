@@ -11,7 +11,7 @@ import (
 	"release-desk/internal/storage/fileio"
 )
 
-// scan 轮询本地 AI 版本文件。
+// ScanFiles 轮询并增量合并本地 AI 版本文件，保留执行状态与历史。
 // 无业务入参；使用接收对象或本机启动上下文，不隐式触发外部写操作。
 // 不返回业务值；运行结果通过受控状态、记录或日志反馈，失败不会伪装为成功。
 func (s *Store) ScanFiles() {
@@ -165,7 +165,7 @@ func MergeExternalVersion(previous, incoming VersionFile) (VersionFile, error) {
 		item.OnlineAt = old.OnlineAt
 		item.Status = old.Status
 		item.VerifyRuns = old.VerifyRuns
-		item.VerifyState = "待验证"
+		item.VerifyState = PendingVerificationState(item)
 		if VerificationHash(old) == VerificationHash(item) {
 			item.VerifyState = old.VerifyState
 		}
