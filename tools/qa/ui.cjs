@@ -508,6 +508,7 @@ process.on("unhandledRejection", (error) => {
     return route.fulfill({ json: { data: null } });
   });
   await page.locator('[data-action="settings"]').click();
+  await page.locator('[data-action="settings-tab"][data-tab="code"]').click();
   await page.getByRole("heading", { name: "连接与设置" }).waitFor();
   await page.screenshot({
     path: path.join(output, "scan-settings-folder.png"),

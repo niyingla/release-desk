@@ -30,8 +30,10 @@ func (a *Service) AITemplate(body []byte) (any, error) {
 	if name == "" {
 		name = "当前发布版本"
 	}
-	prompt := fmt.Sprintf("使用 $release-desk-version-scan 扫描 %s，只整理设置中作者的改动。数据目录：%s。读取 settings.json 的仓库与作者，保留人工状态与历史，将有来源证据的各类事项（含上线后初始化接口）增量写入版本文件，不实际调用接口。", name, a.Store.Dir)
-	return map[string]string{"folder": folder, "template": filepath.Join(folder, "版本记录模板.json"), "guide": filepath.Join(folder, "AI填写说明.txt"), "prompt": prompt}, nil
+	// 指令显式给出软件管理的副本路径，不再依赖另一台电脑的个人技能安装状态。
+	skill := filepath.Join(folder, "skills", "release-desk-version-scan", "SKILL.md")
+	prompt := fmt.Sprintf("先读取软件内置扫描技能文件 %s，再扫描 %s，只整理设置中作者的改动。数据目录：%s。读取 settings.json 的仓库与作者，保留人工状态与历史，将有来源证据的各类事项（含上线后初始化接口）增量写入版本文件，不实际调用接口。", skill, name, a.Store.Dir)
+	return map[string]string{"folder": folder, "template": filepath.Join(folder, "版本记录模板.json"), "guide": filepath.Join(folder, "AI填写说明.txt"), "skill": skill, "prompt": prompt}, nil
 }
 
 // AIVerify 启动选中事项的 AI 自主只读验证。

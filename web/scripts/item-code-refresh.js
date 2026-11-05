@@ -4,6 +4,10 @@
  * @returns {string} 单项按钮 HTML；其他类型为空，不启动任何后台调用。
  */
 function itemCodeRefreshButton(item) {
+  // 更新代码只属于变更验证事项，其他清单不提供此操作。
+  // 是否正在更新必须同时匹配版本和稳定 ID，不能只比较标题。
+  // SQL 与扫描可独立运行，但两个 AI 任务仍遵循原来的互斥规则。
+  // 按钮状态只是界面提示，后端还会重新检查任务占用和来源。
   if (item.kind !== "verify") return "";
   const updating =
     state.scan?.running &&
@@ -21,6 +25,15 @@ function itemCodeRefreshButton(item) {
  * @returns {void} 仅展示确认弹窗；实际任务由明确的确认操作触发。
  */
 function confirmItemCodeRefresh(id) {
+  // 按点击行的稳定 ID 定位，不依赖详情区原先展开的事项。
+  // 记录已删除或类型变化时直接提示，不创建空白扫描。
+  // 确认窗口先展示目标与影响，打开窗口本身不调用模型。
+  // 版本与 ID 写入确认按钮，提交时不会追随新的行选择。
+  // 提示明确只读本地引用，不暗中同步远程代码。
+  // 旧验证历史仍保留，条件更新可能使旧结论不再适用。
+  // 业务标题先转义，版本文件不能借此改变确认按钮。
+  // 取消只关闭窗口，不消费 Codex 额度或修改版本文件。
+  // 真正候选保存仍由后端的单项范围校验决定。
   const item = versionData()?.items.find(
     (row) => row.id === id && row.kind === "verify",
   );
@@ -48,6 +61,9 @@ function confirmItemCodeRefresh(id) {
  * @returns {Promise<void>} 接收成功后打开可收起、可停止的扫描进度。
  */
 async function startItemCodeRefresh(element) {
+  // 只有匹配的确认窗口可以启动本轮操作，旧按钮点击不再有效。
+  // 版本与事项来自确认按钮快照，不从当前高亮行重新取值。
+  // 先刷新后台接收状态再展示进度，避免窗口关联到旧扫描。
   if (modalType !== "item-code-confirm") return;
   await api("ai/item/refresh", {
     version: element.dataset.name,

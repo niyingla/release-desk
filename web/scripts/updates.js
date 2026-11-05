@@ -3,6 +3,14 @@
  * @returns {void} 仅更新按钮和已打开的更新弹窗，不发起下载。
  */
 function renderUpdateStatus() {
+  // 更新服务有独立状态，不能用业务文件修订号决定是否刷新。
+  // 还没有后台快照时保留现有界面，不把未查询解释为已经最新。
+  // 按钮分别显示检查中、可更新和普通检查入口。
+  // 检测到新版只提示可下载，不自动退出或替换正在运行的 EXE。
+  // 没有打开更新弹窗时不改动其他业务窗口正文。
+  // 网络错误单独显示，不能回退成没有可用更新。
+  // 检查时间按用户电脑时区展示，后台仍保存统一时间格式。
+  // 远端说明只作为文字，下载地址和允许操作继续由后端控制。
   const update = state?.software_update;
   const button = document.querySelector("#update-button");
   if (!update || !button) return;
@@ -36,6 +44,14 @@ function renderUpdateStatus() {
  * @returns {string} 可安全插入的内部按钮 HTML。
  */
 function softwareUpdateButtons(update) {
+  // 检查进行中禁用重复检查，避免界面并行触发多份请求。
+  // 发布说明按钮需要已经验证过的发布页地址。
+  // 只有附件已经完整上传，才提供对应 Windows EXE 的下载入口。
+  // 标签存在但附件尚未就绪时不伪造可下载安装状态。
+  // 按钮只携带内部用途标识，不把远端 URL 放入可修改的 DOM 属性。
+  // 打开发布页与打开下载资源分别处理。
+  // 关闭按钮始终保留，网络检查不会阻塞用户回到离线工作台。
+  // 本方法只生成操作 HTML，不执行浏览器跳转。
   // 下载按钮只在完整正式版 EXE 可用时展示，尚无附件只允许看发布页。
   return (
     button(
@@ -66,6 +82,14 @@ function softwareUpdateButtons(update) {
  * @returns {Promise<boolean>} 已处理时为 true，其他动作交回原事件入口。
  */
 async function handleUpdateAction(action) {
+  // 软件更新独立于版本业务，不能占用 SQL 或模型任务队列。
+  // 打开窗口先显示本地框架，断网时仍可关闭。
+  // 主动检查调用后台端点，不在界面读取 GitHub 凭据。
+  // 再次检查沿用同一个更新服务，不从用户记录读取自定义地址。
+  // 发布页和下载是两种用途，由服务端选择已经验证的 URL。
+  // 其他动作返回未处理，让业务派发器继续处理。
+  // 后台请求提交后刷新快照，窗口展示的是服务端的实际检查状态。
+  // 下载动作不修改本机版本清单或数据库连接。
   if (action === "software-update") {
     // 打开面板即请求检查；即使断网也保留可关闭的本地界面。
     showModal(

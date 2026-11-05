@@ -52,6 +52,8 @@ const icon = (name) =>
 let state = null;
 let catalog = [];
 let gitBranch = "";
+// 新建版本只用代码库分支候选；总览的 SQL 目录与文件数量继续使用 catalog。
+let codeVersionCandidates = [];
 let currentVersion = "";
 let archivedOnly = false;
 let currentKind = "job";
@@ -152,6 +154,10 @@ function badge(text) {
 
 // 操作用途集中定义，标题说明实际影响，避免各入口的提示文字不一致。
 const actionDescriptions = {
+  "ai-onboarding":
+    "生成当前电脑的 AI 接入指引，供助手填写非敏感设置及发布记录；不自动执行任务。",
+  "copy-ai-onboarding":
+    "复制接入指令，包含本机指引文件位置，不包含连接密钥或登录态。",
   "check-structure":
     "只读核对所选环境全部目标库的表、字段、索引及字段顺序；不会执行 DDL 或数据语句。",
   "scan-version":
@@ -903,9 +909,9 @@ function renderVersionOptions() {
   const input = $("#version-name"),
     list = $("#version-options");
   if (!input || !list) return;
-  // 不按工作区目录扫描；数据来自当前分支的 Git 版本查询接口。
+  // 只显示代码仓库发布分支；SQL 目录清单不能混入新建版本候选。
   const query = input.value.trim().toLowerCase();
-  const matches = [...catalog]
+  const matches = [...codeVersionCandidates]
     .sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }))
     .filter((version) => version.name.toLowerCase().includes(query));
   // 使用纯名称筛选；已经记录的版本仍可选择，保存时直接打开原记录。
@@ -986,11 +992,12 @@ async function showVersionForm(name = "") {
   // 每次新建重新读取当前 Git 列表，不依赖启动时缓存，也不隐式 fetch 或切分支。
   if (!name) {
     try {
-      const result = await api("git/versions");
-      catalog = result.versions;
-      gitBranch = result.branch;
+      // 独立接口读取设置中的代码库，不改变 SQL 总览与导入使用的仓库来源。
+      const result = await api("git/code-versions");
+      codeVersionCandidates = result.versions;
     } catch (error) {
-      catalog = [];
+      // 本次读取失败时清除旧候选，防止切换仓库后仍显示前一个代码库的分支。
+      codeVersionCandidates = [];
       toast(`Git 版本读取失败，可手动输入：${error.message}`, true);
     }
   }
@@ -1103,26 +1110,6 @@ function showItemForm(item = null) {
   }
   // 隐藏的来源字段保留，编辑 SQL 时不会丢失 Git 提交定位信息。
   $("#item-form").originalData = r.data;
-}
-
-/**
- * 读取非敏感连接摘要并展示设置表单。
- * @returns {Promise<*>} 操作完成结果；失败抛出错误，由界面统一提示，不当作成功。
- */
-async function showSettings() {
-  const profiles = await Promise.all(
-    state.sql_environments.map(({ id }) =>
-      api("db/settings", { environment: id }),
-    ),
-  );
-  const config = await api("settings/get");
-  showModal(
-    "连接与设置",
-    "测试和 UAT 连接独立保存，密码使用当前 Windows 用户加密；不使用的环境可留空。",
-    `<form id="settings-form">${sqlConnectionFields(profiles)}<div class="section-label">初始化接口</div><div class="form-grid">${formField("环境入口（JSON，测试 / 线上三端）", "initialization_base_urls", JSON.stringify(config.initialization_base_urls || {}, null, 2), { full: true, multiline: true })}</div><div class="section-label">Git 与 Codex</div><div class="form-grid">${formField("SQL 仓库目录", "sql_repository", config.sql_repository, { full: true })}${formField("代码仓库目录", "code_repository", config.code_repository, { full: true })}${formField("Git 提交作者", "git_author", config.git_author)}${formField("日志技能文件", "log_skill", config.log_skill, { full: true })}${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}</div><div class="notice info" style="margin-top:18px;margin-bottom:0">数据库匹配规则在本地 settings.json 中集中维护。修改后重启软件生效。<br>记录目录：${escapeHTML(state.data_dir)}</div></form>`,
-    `${button("files", "版本文件夹", "folder")}${button("open-data", "数据目录", "folder")}${button("close-modal", "取消")}${button("save-settings", "保存设置", "check", "primary")}`,
-  );
-  $("#settings-form").config = config;
 }
 
 /**
@@ -1509,6 +1496,8 @@ async function showTemplateGuide() {
  * @returns {Promise<*>} 操作完成结果；失败抛出错误，由界面统一提示，不当作成功。
  */
 async function handleAction(action, element) {
+  // 接入只生成并复制本机说明，不参与扫描、SQL 或验证的运行占用。
+  if (await handleAIOnboardingAction(action)) return;
   // 更新功能独立派发，网络检查不会进入业务任务队列。
   if (await handleUpdateAction(action)) return;
   if (await handleTaskAction(action, element)) return;
@@ -1801,6 +1790,9 @@ async function handleAction(action, element) {
       break;
     case "settings":
       await showSettings();
+      break;
+    case "settings-tab":
+      selectSettingsTab(element.dataset.tab);
       break;
     case "save-settings": {
       const form = $("#settings-form"),

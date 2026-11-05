@@ -6,6 +6,14 @@
    * @returns {{text:string, valid:boolean, empty:boolean}} 显示文案及解析状态；不计算或启动调度。
    */
   function describe(value) {
+    // 频率只接受表达式，人工说明应保存在事项描述中。
+    // 空值表示调度尚未确认，不能替用户生成默认执行时间。
+    // 拆分段数用于区分标准格式和 Quartz 的星期起点。
+    // 输入中的字符串原样参与解析，不把非法字符静默删除。
+    // 中文语言包本地加载，编辑过程中不访问网络服务。
+    // 零步长即使能被第三方库描述，也不是有效的调度计划。
+    // 日期限制必须保留，不能把每周或每月执行简写成每天。
+    // 解析失败返回独立状态，界面不会继续显示上次的正确解释。
     const expression = String(value || "").trim();
     if (!expression)
       return { text: "未填写 Cron，实际调度待确认", valid: false, empty: true };
@@ -56,6 +64,8 @@
    * @returns {void} 只更新关联提示；不改变输入、不请求网络、不保存记录。
    */
   function updatePreview(input) {
+    // 解释节点可能随编辑弹窗关闭而消失，此时不更新旧页面。
+    // 无效标记同步到可访问性属性，不能只依靠文字颜色提示错误。
     const preview = document.getElementById("cron-preview");
     if (!preview || !input) return;
     const result = describe(input.value);

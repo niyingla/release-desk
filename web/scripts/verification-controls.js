@@ -5,6 +5,9 @@
  * @returns {string} 人工项仅允许复制步骤，自动项提供验证及提示词入口。
  */
 function verificationDetailActions(item) {
+  // 人工事项只提供复制步骤，不出现可误点的付费自动验证入口。
+  // 自动事项仍需选择证据时间范围，详情按钮不直接开始取证。
+  // 复制提示词只是整理文本，不会把事项标记为通过。
   if (needsManualVerification(item))
     return button("copy-verification", "复制人工验证内容", "copy");
   return (
@@ -19,6 +22,12 @@ function verificationDetailActions(item) {
  * @returns {string} 原因、目标及步骤的纯文本。
  */
 function verificationItemText(item) {
+  // 保留业务标题以便用户在独立 AI 对话中定位目标。
+  // 验证方式与手动原因一起输出，避免复制后丢失人工限制。
+  // 修改内容描述目标变化，步骤仅作为参考路径。
+  // 日志线索和预期结果独立列出，不合并成固定成功关键词。
+  // 旧实际结论按保存原文展示，不冒充本轮重新取得的证据。
+  // 空说明不生成额外段落，已有多行正文保留原格式。
   return [
     item.data.title,
     `验证方式：${item.data.verification_mode || "自动验证"}`,
@@ -39,6 +48,9 @@ function verificationItemText(item) {
  * @returns {string} 不会在后台扩大用户已经确认的查询范围。
  */
 function verificationRangeControl(prefix) {
+  // 快捷范围只是一组可见选择，后台不会据此擅自扩大窗口。
+  // 字段前缀区分单项和批量弹窗，避免给另一窗口写时间。
+  // 用户仍可直接调整起止时间，低频任务不被固定为一小时。
   const choices = [
     ["1", "最近 1 小时"],
     ["6", "最近 6 小时"],
@@ -54,6 +66,9 @@ function verificationRangeControl(prefix) {
  * @returns {boolean} 已处理范围选择为 true，其余字段交给原流程。
  */
 function applyVerificationRange(target) {
+  // 只处理带有范围元数据的控件，其他设置变动交给原事件入口。
+  // 起点和终点从同一个当前时间计算，避免两次取时产生不一致窗口。
+  // 写入的是待确认表单，选择较长范围不会立刻查询生产日志。
   const prefix = target.dataset.verificationRange;
   if (!prefix) return false;
   const end = new Date(),
@@ -70,6 +85,8 @@ function applyVerificationRange(target) {
  * @returns {string} 用户可直接识别的状态标签。
  */
 function verificationStatusLabel(status, result) {
+  // 高概率确认仍保留与直接确认不同的展示，不能抹去证据强度。
+  // 阻塞原因仅替换可读标签，不改写历史中保存的原始状态。
   if (status === "通过" && result?.confirmation === "高概率确认")
     return "通过（高概率）";
   if (status === "证据不足" && result?.blocker) return result.blocker;

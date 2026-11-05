@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	gitrepo "release-desk/internal/git/repository"
 	"release-desk/internal/identity"
 	"release-desk/internal/platform/process"
 	"release-desk/internal/policy"
@@ -19,14 +21,6 @@ import (
 	"release-desk/web"
 )
 
-// ReleaseScanSkillPath 返回当前用户的版本扫描技能入口。
-// 无业务入参；以 Windows 用户目录定位已安装的个人技能。
-// 返回：技能文件绝对路径，不读取或返回 Codex 登录凭据。
-func ReleaseScanSkillPath() string {
-	// 用户目录来自系统，迁移电脑时无需硬编码用户名。
-	return filepath.Join(os.Getenv("USERPROFILE"), ".codex", "skills", "release-desk-version-scan", "SKILL.md")
-}
-
 // InvokeVersionScan 使用已有 Codex CLI 登录态执行只读代码扫描。
 // 参数 parent：只取消本轮扫描的上下文，不能复用全局取消句柄作为手动停止。
 // 参数 exe：由本机工具发现逻辑确认的 CLI 可执行文件。
@@ -34,8 +28,29 @@ func ReleaseScanSkillPath() string {
 // 参数 config：固定的仓库和作者范围，不含数据库连接信息。
 // 返回：结构化候选或进程、超时、技能、结果格式错误；不会自行保存版本。
 func (s *Service) InvokeVersionScan(parent context.Context, exe string, version workspace.VersionFile, config workspace.Settings) (ScanResult, error) {
-	// 整版扫描沿用原提示词，单项更新由独立构建器提供明确的范围与固定 SHA。
-	return s.invokeScan(parent, exe, version, config, VersionScanPrompt)
+	// 先解析用户所选版本，当前工作分支或未提交内容不能替代本轮发布对象。
+	s.SetVersionScanPhase("读取指定版本本地 Git 引用")
+	revision, err := gitrepo.New(config.CodeRepository, config.GitAuthor).VersionRevision(parent, version.Version.Name)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	// 不存在的发布分支直接停止，不为成功启动模型而回退当前 HEAD。
+	// SHA 在启动模型前固定；后续移动引用不会改变本轮读取目标。
+	slog.Info("版本扫描目标已固定", "version", version.Version.Name, "ref", revision.Ref, "sha", revision.SHA)
+	return s.invokeScan(parent, exe, version, config, func(snapshot workspace.VersionFile, settings workspace.Settings) (string, error) {
+		// 沿用增量合并与实际发布基线规则，固定目标并不代表代码已经上线。
+		prompt, err := VersionScanPrompt(snapshot, settings)
+		if err != nil {
+			return "", err
+		}
+		// 用独立 JSON 表达来源，不把版本或引用拼成可执行 Git 命令。
+		target, err := json.Marshal(revision)
+		if err != nil {
+			return "", err
+		}
+		// 目标约束在业务上下文之外，历史事项中的来源不能覆盖它。
+		return "本轮整版扫描的固定代码目标：" + string(target) + "\n必须以该 SHA 的 Git 对象读取源码、注解、调用链及净差异，例如 git show <SHA>:<path>、git grep <pattern> <SHA>、git diff <发布基线> <SHA>。当前工作区、HEAD、其他分支及未提交内容只可作定位线索，不能作为目标实现或发布事项。不得切换分支、fetch 或 pull；目标对象缺失立即停止并说明，不回退当前工作区。来源证据记录本轮目标 SHA，历史已发布基线仍需独立确认。\n\n" + prompt, nil
+	})
 }
 
 // invokeScan 复用只读 Codex 进程、Schema 和有界输出协议。
@@ -45,11 +60,8 @@ func (s *Service) InvokeVersionScan(parent context.Context, exe string, version 
 // 返回：结构化候选或准备、进程、协议错误；保存与范围校验由上层负责。
 func (s *Service) invokeScan(parent context.Context, exe string, version workspace.VersionFile, config workspace.Settings, promptBuilder func(workspace.VersionFile, workspace.Settings) (string, error)) (ScanResult, error) {
 	s.SetVersionScanPhase("准备 Codex 与扫描协议")
-	// 必须使用与独立对话相同的技能规则，技能缺失时明确提示安装路径。
+	// 规则随当前 EXE 内置，不再要求新电脑预先安装某个用户的个人技能。
 	var result ScanResult
-	if _, err := os.Stat(ReleaseScanSkillPath()); err != nil {
-		return result, errors.New("版本扫描技能缺失：" + ReleaseScanSkillPath())
-	}
 	runDir := filepath.Join(s.Dir, "Codex扫描", identity.NewID())
 	// 每次调用隔离结果路径，失败重试不能误读上一次输出。
 	if err := os.MkdirAll(runDir, 0700); err != nil {
@@ -153,6 +165,11 @@ func VersionScanPrompt(version workspace.VersionFile, config workspace.Settings)
 		return "", err
 	}
 	// 数据作为独立 JSON 附加；版本备注中的文字不改变工具与环境边界。
-	prompt := strings.ReplaceAll(text, "__SCAN_SKILL__", ReleaseScanSkillPath())
-	return strings.ReplaceAll(prompt, "__CONTEXT__", string(payload)), nil
+	skill, err := builtinSkillContent("release-scan-skill.txt")
+	if err != nil {
+		return "", err
+	}
+	// 规则直接进入本轮提示词，导出副本被修改也不能改变软件扫描的只读约束。
+	prompt := strings.ReplaceAll(text, "__SCAN_SKILL__", "已随本次提示词提供的内置规则，无需查找个人技能目录")
+	return "软件内置 release-desk-version-scan 技能：\n" + skill + "\n\n本次软件扫描要求：\n" + strings.ReplaceAll(prompt, "__CONTEXT__", string(payload)), nil
 }

@@ -6,6 +6,11 @@
  * @returns {number} 负值表示左侧排前，不按整数转换避免精度丢失。
  */
 function compareDatabaseNames(left, right) {
+  // 仅末尾连续数字参与编号比较，其余文本作为库名前缀。
+  // 去除编号前导零后比较长度，避免超大租户编号转换为浮点数。
+  // 前缀不同先按文本区分，不能把服务商和租户库混为同一编号序列。
+  // 没有编号的模板库优先于同前缀的数字库。
+  // 归一编号相同时再比较完整名称，使前导零写法也具有确定顺序。
   const parts = (name) => {
     const match = String(name).match(/^(.*?)([0-9]+)$/);
     return match
@@ -28,5 +33,6 @@ function compareDatabaseNames(left, right) {
  * @returns {Array<object>} 与执行预览一致的自然数字顺序。
  */
 function orderedDatabaseRows(rows) {
+  // 展示排序使用副本，不改变后端执行顺序或原有审计数组。
   return [...rows].sort((a, b) => compareDatabaseNames(a.database, b.database));
 }

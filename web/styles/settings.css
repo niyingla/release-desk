@@ -1,0 +1,72 @@
+/* 设置页按功能切换，色彩继承主题，面板保留节点以保存未提交输入。 */
+.settings-modal .modal-body {
+  padding-top: 0;
+}
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding-top: 14px;
+}
+.settings-tabs button {
+  /* 选中边框即时切换，避免快速换页时短暂出现两条选中线。 */
+  transition: none;
+  flex: 1;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 14px 8px;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--purple);
+  color: var(--purple);
+}
+.settings-tabs button:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: -4px;
+}
+.settings-panels {
+  padding-top: 8px;
+}
+.settings-panels [hidden] {
+  display: none;
+}
+.settings-section-title {
+  font-size: 14px;
+  margin: 20px 0 14px;
+  color: var(--ink);
+}
+.settings-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  margin-bottom: 0;
+}
+.settings-materials {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-materials small {
+  flex-basis: 100%;
+  color: var(--muted);
+  line-height: 1.7;
+}
+@media (max-width: 620px) {
+  .settings-tabs {
+    gap: 0;
+  }
+  .settings-tabs button {
+    font-size: 12px;
+    padding-inline: 4px;
+  }
+}

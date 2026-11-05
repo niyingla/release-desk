@@ -29,6 +29,27 @@ func (a *Service) GitVersions(_ []byte) (any, error) {
 	return map[string]any{"versions": list, "branch": branch, "path": path}, nil
 }
 
+// GitCodeVersions 为新建版本提供代码仓库的发布分支候选。
+// 无业务入参；仓库与作者取当前设置快照，不接受页面提供任意路径或 Git 命令。
+// 返回：代码库候选、当前分支和实际目录；读取失败不回退 SQL 仓库。
+func (a *Service) GitCodeVersions(_ []byte) (any, error) {
+	// 新建版本与 SQL 导入使用不同来源，不能重配共享 SQL 读取器。
+	config := a.Config()
+	code := gitrepo.New(config.CodeRepository, config.GitAuthor)
+	list, err := code.ReleaseBranches()
+	// 代码库无效时明确报错，不能把 SQL 库同名版本作为看似成功的候选。
+	if err != nil {
+		return nil, err
+	}
+	// 当前分支只是来源提示；候选仍包括本地缓存的其他发布分支。
+	branch, err := code.Branch()
+	if err != nil {
+		return nil, err
+	}
+	// 返回快照中的代码目录，便于界面说明候选来自哪个仓库。
+	return map[string]any{"versions": list, "branch": branch, "path": config.CodeRepository}, nil
+}
+
 // GitSync 同步当前分支的远端对象。
 // 无业务入参；使用接收对象或本机启动上下文，不隐式触发外部写操作。
 // 返回：成功返回 nil 结果与 nil 错误；请求校验、记录定位或后续职责处理失败时返回错误，未返回业务成功凭证。

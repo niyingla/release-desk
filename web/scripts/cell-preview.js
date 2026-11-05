@@ -23,6 +23,10 @@
    * @returns {void} 只展示文字；空内容关闭浮层，不触发编辑、保存或执行。
    */
   function showPreview(cell) {
+    // 当前弹窗优先于背景表格，浮层不能抢占确认操作。
+    // 读取的是单元格原文或明确的状态摘要，不从省略文本反推内容。
+    // 每次更换锚点重置浮层正文滚动，避免直接从上一项中间位置开始阅读。
+    // 定位使用实际渲染尺寸，贴近窗口边缘时会向内收敛。
     // 弹窗打开时，背景表格不能再弹出浮层遮挡确认或关闭按钮。
     const modal = document.querySelector(".modal-overlay");
     if (modal && !modal.contains(cell)) return hidePreview();
@@ -68,6 +72,9 @@
    * @returns {boolean} 锚点被重绘或移动时为 true；迟到但已体现在布局中的滚动不算移动。
    */
   function anchorMoved() {
+    // 迟到的滚动事件可能没有改变实际位置，不能仅凭事件到达就关闭浮层。
+    // 节点已被表格刷新替换时，旧锚点不再具备有效的定位依据。
+    // 半像素容差容纳布局舍入，减少静止单元格的浮层闪烁。
     if (!anchorCell?.isConnected || !anchorBounds) return true;
     const rect = anchorCell.getBoundingClientRect();
     return ["top", "left", "bottom", "right"].some(

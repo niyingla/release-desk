@@ -14,6 +14,15 @@ const taskKindLabels = {
  * @returns {void} 仅渲染本机保存的数据。
  */
 function renderTaskCenter() {
+  // 任务目录来自本机持久化快照，切换筛选不重新执行历史任务。
+  // 缺少旧任务目录时显示空态，不能据此认定以前没有 SQL 审计。
+  // 筛选只影响可见类型，不删除其他类型的记录。
+  // 运行数量按完整目录统计，不被当前筛选掩盖。
+  // 面包屑切到任务中心，避免把任务误认为当前业务版本的内容。
+  // 任务标题和进展来自外部运行结果，进入页面前必须转义。
+  // 查看按钮按任务是否结束区分进度与结果，二者仍绑定同一个稳定 ID。
+  // 停止按钮只在运行时出现，正在停止时禁用重复请求。
+  // 这里不依据任务名称或开始时间推断是否仍在执行。
   const records = state.tasks || [];
   const rows = records.filter(
     (record) => !taskFilter || record.kind === taskFilter,
@@ -42,6 +51,8 @@ function renderTaskCenter() {
  * @returns {string} 可读时间；未知历史时间保留空白语义。
  */
 function taskTime(value) {
+  // 后端时间统一保存为 RFC3339，界面再转换为用户电脑时区。
+  // 缺少历史时间时保留未知状态，不补造当前时间。
   return value
     ? new Date(value).toLocaleString("zh-CN", { hour12: false })
     : "—";
@@ -53,6 +64,11 @@ function taskTime(value) {
  * @returns {Promise<void>} 显示逐项与逐库结果；不激活历史任务。
  */
 async function showTaskDetail(id) {
+  // 选定的是一轮任务 ID，不以业务版本名查找最后一次任务代替。
+  // 先打开可关闭的本地面板，再异步读取详情。
+  // 初始正文为空，避免短暂显示上一个任务的结果。
+  // 独立弹窗类型用于识别后续轮询和迟到响应。
+  // 历史任务只展示记录，不调用原来的启动入口。
   selectedTaskID = id;
   showModal(
     "任务详情",
@@ -70,6 +86,20 @@ async function showTaskDetail(id) {
  * @returns {Promise<void>} 只显示当前弹窗请求，迟到响应被丢弃。
  */
 async function renderTaskDetail() {
+  // 每次读取记录请求的序号都递增，只允许最新一次回写界面。
+  // 任务 ID 在请求发出前固定，用户切换目标后旧响应必须丢弃。
+  // 弹窗关闭或更换类型后，不再操作已经不属于本任务的节点。
+  // 读取成功才采集当前滚动位置，避免把等待时的空白位置当成用户选择。
+  // 已展开条目使用稳定键保存，不依赖列表索引重建展开状态。
+  // 首次打开和后续刷新分别处理，首次可展开，后续尊重用户收起选择。
+  // 最近进展从所有事项中按时间取最后一条，不使用正在运行的行号代替。
+  // 进展附带来源标题，跨事项并发时仍能定位到对应业务。
+  // 头部文本直接写 textContent，不把任务标题当成 HTML。
+  // 正文交给增量 DOM 同步，未变化的节点继续保留身份。
+  // 同步后恢复滚动位置，轮询不会把用户拉回顶部。
+  // 运行和结束时间分别展示，缺失时间不自行推算。
+  // 底部停止按钮随真实运行状态更新，不用按钮是否存在推断任务状态。
+  // 停止入口依然绑定这一轮任务 ID，不会误停相同版本的后续任务。
   const id = selectedTaskID,
     request = ++taskDetailRequest;
   const record = await api("task/detail", { id });
@@ -117,6 +147,9 @@ async function renderTaskDetail() {
  * @returns {string} 已转义明细 HTML。
  */
 function taskRows(rows, opened, restored, prefix = "") {
+  // 递归路径参与稳定键，多个脚本下的同索引子项不会互相覆盖展开状态。
+  // 等待项的取消按钮必须与当前队列稳定 ID 对上，历史记录不能发起新取消。
+  // 条件、详情和证据均作为文字展示，回看不改变保存的验收结论。
   return rows
     .map((row, index) => {
       const key = `${prefix}${row.id || index}`;
@@ -136,6 +169,17 @@ function taskRows(rows, opened, restored, prefix = "") {
  * @returns {Promise<boolean>} 是否已经消费此操作。
  */
 async function handleTaskAction(action, element) {
+  // 任务导航与业务版本导航使用不同的可见状态。
+  // 进入目录先收起旧弹窗，避免后台结果覆盖任务中心。
+  // 清空当前版本和选中行，只改变页面位置，不删除业务内容。
+  // 筛选以任务类型为准，不通过标题猜测任务归属。
+  // 筛选后重新渲染目录，不调用任务执行端点。
+  // 查看详情只传稳定 ID，仍由后端检查记录是否存在。
+  // 停止请求同样绑定稳定 ID，不按版本批量停止不相关任务。
+  // 停止提示说明请求已经发出，不冒充所有外部操作都已经中止。
+  // 刷新后若详情窗口仍打开，再回显本轮的实际收尾状态。
+  // 未知动作返回未处理，交回其他业务派发器。
+  // 已处理动作统一返回成功消费标记，避免同一点击继续落入另一套逻辑。
   switch (action) {
     case "tasks":
       closeModal();

@@ -131,6 +131,14 @@ func run(data string, serve, check bool) error {
 
 	config := store.Config()
 	app := &App{Store: store, Git: gitrepo.New(config.SQLRepository, config.GitAuthor), Token: identity.NewID()}
+	// 新版本启动时刷新受软件管理的技能副本，独立对话也能读取当前程序自带的规则。
+	if _, err = app.services().AI.SyncBuiltinSkills(); err != nil {
+		// 副本写入失败不阻止离线浏览；软件内扫描仍从 EXE 读取内置规则。
+		slog.Warn("内置技能副本未更新", "error", err)
+		store.Mu.Lock()
+		store.Notice = "内置技能副本未更新，请检查数据目录权限；软件内扫描与验证仍可使用内置规则"
+		store.Mu.Unlock()
+	}
 
 	if check {
 		return app.check()

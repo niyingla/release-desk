@@ -13,6 +13,11 @@ const bulkExpandedState = new Map();
  * @returns {void} 不修改发布记录，仅更新界面选择。
  */
 function syncBulkSelection(version) {
+  // 批量勾选状态属于版本与类型组合，不能跨页复用。
+  // 上下文变化时清空旧 ID，避免把另一版本事项带入操作。
+  // 有效集合只包括本类型、可自动处理的事项。
+  // 人工验证项即使曾被选中过，也必须从自动选择集合剔除。
+  // 记录被外部扫描删除或改型后，旧勾选自动失效。
   const context = `${currentVersion}|${currentKind}`;
   if (bulkSelectionContext !== context) bulkCheckedIDs.clear();
   bulkSelectionContext = context;
@@ -31,6 +36,10 @@ function syncBulkSelection(version) {
  * @returns {string} 只包含本表格操作，不自动启动任何后台任务。
  */
 function bulkControls() {
+  // 只有 SQL 和验证表提供批量启动，其他类型不借用此入口。
+  // 验证队列可以包含多个版本，因此判断关联时还需查看逐行版本。
+  // 已选数量来自稳定 ID 集合，不根据当前行高亮推断选择。
+  // 没有勾选时禁用启动，查看已有进度仍是独立操作。
   if (!["sql", "verify"].includes(currentKind)) return "";
   const queue = currentKind === "sql" ? state.sql_queue : state.verify_queue;
   const hasQueue =
@@ -46,6 +55,10 @@ function bulkControls() {
  * @returns {string} 运行中显示固定上限并禁用修改；空闲时可选 1 至后端统一上限。
  */
 function verificationConcurrencyControl() {
+  // 运行中的队列上限属于启动快照，界面不能中途伪装成另一个并发数。
+  // 空闲时显示后端持久化偏好，不在浏览器另存一份默认值。
+  // 可选范围由后端策略提供，避免前后端允许上限不一致。
+  // 禁用只是展示约束，提交时后端仍会再次检查并发范围。
   const running = state.verify_queue?.running || state.single_verify?.running;
   const selected = running
     ? state.verify_queue?.concurrency || state.verification_default_concurrency
@@ -63,6 +76,7 @@ function verificationConcurrencyControl() {
  * @returns {string} 勾选单元格，非批量表格返回空字符串。
  */
 function bulkRowCheckbox(item) {
+  // 复选框绑定稳定 ID，名称只用于辅助识别，不能成为执行目标。
   if (!["sql", "verify"].includes(currentKind)) return "";
   // 人工项不提供可批量选择的数据属性，全选只遍历真正允许的自动项。
   if (needsManualVerification(item))
@@ -75,6 +89,14 @@ function bulkRowCheckbox(item) {
  * @returns {void} 不重建表格，连续勾选不会影响当前行详情或滚动位置。
  */
 function updateBulkChecks() {
+  // 只同步控件状态，不能为了勾选一次而重建整张表。
+  // 可见复选框决定全选和半选显示，其他筛选隐藏项不参与半选判断。
+  // 选择集合才是已选总数来源，不能把详情选中行误算入数量。
+  // 空表不能显示成全选，避免用户误以为有待执行目标。
+  // 部分选择使用浏览器的半选状态，与是否启动任务无关。
+  // 批量按钮随集合是否为空启用，不据此判断后端是否允许执行。
+  // 全选按钮文案反映当前可见行状态，不修改已有业务记录。
+  // 此方法不提交请求，网络失败不会影响当前勾选操作。
   const boxes = [...document.querySelectorAll("[data-bulk-check]")];
   const selected = boxes.filter((box) =>
     bulkCheckedIDs.has(box.dataset.bulkCheck),
@@ -102,6 +124,9 @@ function updateBulkChecks() {
  * @returns {void} 仅更新已显示行的界面勾选状态。
  */
 function selectVisibleBulkRows(checked) {
+  // 只遍历页面当前允许选择的控件，人工项没有对应的数据属性。
+  // 添加和移除都以事项稳定 ID 为单位，不修改版本中的待办状态。
+  // 最后统一更新计数和半选状态，避免逐行渲染造成闪烁。
   for (const box of document.querySelectorAll("[data-bulk-check]")) {
     box.checked = checked;
     checked
@@ -116,6 +141,17 @@ function selectVisibleBulkRows(checked) {
  * @returns {Promise<void>} 只读预览成功后显示确认勾选，不执行脚本。
  */
 async function showBulkSQLPreview() {
+  // 启动预览时先固定所选环境，目标发现不会随下拉框后续变化漂移。
+  // 提交的是版本与已选 ID，SQL 正文和目标库由后端读取。
+  // 前端不根据目录名重新排序，展示后端已经按正文确定的队列。
+  // 只读发现不意味着执行授权，后面仍需勾选确认。
+  // 返回期间环境变化就丢弃这份预览，不能在另一环境下沿用旧令牌。
+  // 逐脚本显示目标集合，平台、服务商和租户脚本不能共用同一列表。
+  // 统计的是脚本乘目标的逐库执行次数，不是不同物理库的去重数量。
+  // 跳过记录仍显示，便于区分历史成功和此次真正待执行目标。
+  // SQL 高亮只改变展示，不改写保存在后端的一次性计划。
+  // 确认按钮首次禁用，复选框是本轮明确确认的来源。
+  // 窗口关闭不消费计划，也不会启动其中一部分脚本。
   const environment = selectedSQLEnvironment;
   toast("正在核对所选 SQL 的执行顺序和目标库…");
   bulkPreview = await api("db/batch/plan", {
@@ -152,6 +188,15 @@ async function showBulkSQLPreview() {
  * @returns {void} 仅显示条件，确认后才会调用已登录 Codex。
  */
 function showBulkVerify() {
+  // 确认弹窗保存当前已选 ID 副本，后续勾选不能扩大已经审阅的范围。
+  // 事项列表来自当前版本，跨版本追加由后端队列逐项管理。
+  // 统一时间窗用于本次所选事项，打开面板不会立即查询日志。
+  // 并发候选来自后端的有限范围，不根据浏览器机器性能自行增大。
+  // 新队列使用持久化偏好，追加队列沿用本轮已经固定的上限。
+  // 追加时禁用选择框，避免显示一个实际上不会采用的新并发数。
+  // 业务名称在列表中转义，模型生成的标题不能改变确认控件。
+  // 确认文案说明独立失败不会中断其他验证，停止则有独立收尾语义。
+  // 本方法只组织条件，真正提交与任务互斥仍由启动端点完成。
   bulkVerifyIDs = [...bulkCheckedIDs];
   const items = versionData().items.filter((item) =>
     bulkVerifyIDs.includes(item.id),
@@ -186,6 +231,11 @@ function showBulkVerify() {
  * @returns {void} 面板可收起，关闭软件仍按原规则停止任务。
  */
 function showBulkProgress(kind) {
+  // 每次打开进度先重置本窗口的展开缓存，不沿用另一批次的条目键。
+  // 面板类型固定读取 SQL 或验证队列，不能由后续标签切换偷换数据来源。
+  // 停止按钮只是入口，是否仍可停止会在渲染快照时重新判断。
+  // 收起只关闭窗口，不把后台队列标记为取消。
+  // 先建立面板节点再渲染，异步轮询才能安全更新现有容器。
   bulkExpandedState.clear();
   bulkProgressKind = kind;
   showModal(
@@ -204,6 +254,27 @@ function showBulkProgress(kind) {
  * @returns {void} 所有外部详情先转义，不在浏览器解释为 HTML。
  */
 function renderBulkProgress() {
+  // 展开状态先从当前节点采集，再生成下一份模板。
+  // 稳定行键用于保留阅读位置，不能用并发完成顺序作为身份。
+  // SQL 和验证读取各自队列，停止按钮也跟随同一类型。
+  // 队列尚未到达时显示等待，不凭空建立一个已结束批次。
+  // 已处理数量排除等待和运行状态，不把最后启动的序号当成进度。
+  // SQL 顶部必须显示固定环境，防止把 UAT 审计理解为测试结果。
+  // 验证的运行数和等待数分别按真实状态统计。
+  // 停止请求只显示正在收尾，未完成行不能提前改成失败。
+  // 每个验证项保留独立标题与版本，跨版本追加也可辨认来源。
+  // 有结构化结论时显示完整分析，只有阶段信息时展示当前摘要。
+  // 结果正文只做转义和复制，不在前端重算是否通过。
+  // 历史详情的展开选择与逐项取消入口相互独立。
+  // 只有等待项能显示取消按钮，运行项的取消由后端策略决定。
+  // 实时进展使用倒序展示副本，持久化原序不被改变。
+  // SQL 当前运行脚本优先使用正在回报的逐库状态。
+  // 其他脚本继续使用各自保存的执行结果，不被当前批次覆盖。
+  // 库名展示副本采用自然编号排序，不能重新安排后端写入顺序。
+  // 初次打开可展开正在执行脚本，后续刷新尊重用户自己的选择。
+  // 尚未执行的脚本明确显示等待，不用空结果冒充成功。
+  // 最终通过增量 DOM 更新保留滚动，不整块替换进度表。
+  // 本方法不发送停止、执行或验证请求，轮询只是回显。
   document.querySelectorAll("[data-bulk-progress-id]").forEach((element) => {
     bulkExpandedState.set(element.dataset.bulkProgressId, element.open);
   });
@@ -270,6 +341,10 @@ function renderBulkProgress() {
  * @returns {string} 最近进展列表；所有模型文字转义后展示。
  */
 function verificationProgressHTML(entries = []) {
+  // 没有实时摘要的旧任务直接省略该区域，不补造验证思路。
+  // 倒序只作用于数组副本，原任务历史仍保留作者写入顺序。
+  // 时间与摘要共同构成稳定键，顶部新增不会覆盖正在阅读的旧条目。
+  // 模型摘要只作为已脱敏的可见行动说明，仍需转义后展示。
   if (!entries.length) return "";
   // 后端历史维持原序，界面用副本倒序，最新内容始终在顶部。
   return `<section class="verification-live"><strong>核验进展 · 最新在前</strong><ol>${[
@@ -289,6 +364,28 @@ function verificationProgressHTML(entries = []) {
  * @returns {Promise<boolean>} 已处理为 true；其他操作交回原界面派发器。
  */
 async function handleBatchAction(action) {
+  // 此派发器只消费批量操作，其他点击必须返回未处理。
+  // 全选切换只影响可见行，不能顺带启动后台任务。
+  // SQL 入口先生成只读预览，验证入口先收集统一条件。
+  // 预览与执行是两步，确认前不能把排好的脚本交给执行器。
+  // SQL 确认必须来自当前弹窗中的勾选，不能只凭按钮可见执行。
+  // 执行请求只提交一次性令牌和确认值，不接收客户端改写的 SQL。
+  // 后端接收后先刷新状态，再打开对应批次进度。
+  // 验证提交使用确认时保存的 ID 集合，不读取后来新增的勾选。
+  // 并发数转换为数字只是协议转换，实际上限仍需后端再次校验。
+  // 起止时间来自本次表单，不能在发送时偷偷扩大窗口。
+  // 追加到已有验证队列时遵循当前队列的快照上限。
+  // 查看进度只选择当前类型，不重新执行任何脚本或模型。
+  // 停止操作先定位实际显示的队列，避免按当前标签误停另一任务。
+  // 只有运行中队列才发送停止，已完成历史保持只读。
+  // 停止端点根据类型区分 SQL 与验证，参数仍是本轮稳定 ID。
+  // 取消请求不承诺已经回滚 DDL，也不把响应迟到当作失败重试。
+  // 提示之后刷新实际状态，保留已经完成的独立结果。
+  // 未知动作返回 false，外层操作入口可继续识别。
+  // 已消费动作返回 true，防止同一点击被执行两次。
+  // 空选择与无效环境最终仍由后端拒绝，界面禁用不是唯一约束。
+  // 后台任务启动失败向统一错误提示抛出，不展示虚假的运行窗口。
+  // 方法内没有循环重发，用户重新确认前不会自动重试。
   switch (action) {
     case "bulk-select-all":
       selectVisibleBulkRows(

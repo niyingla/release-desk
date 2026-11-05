@@ -99,7 +99,7 @@ const fs = require("node:fs");
     await page.locator('#side-versions [data-name="qa-action-help"]').waitFor();
     assert.deepEqual(archives[1], { name: "qa-action-help", archived: false });
     // 新建版本勾选扫描也必须先确认；取消只取消扫描，已保存版本仍保留。
-    await page.route("**/api/git/versions", (route) =>
+    await page.route("**/api/git/code-versions", (route) =>
       route.fulfill({
         json: { data: { branch: "qa", path: "QA fixture", versions: [] } },
       }),

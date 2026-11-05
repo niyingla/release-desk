@@ -44,6 +44,10 @@ func (s *Service) Templates() (string, error) {
 	if err = fileio.AtomicWrite(filepath.Join(folder, "AI填写说明.txt"), []byte(content)); err != nil {
 		return "", err
 	}
+	// 接入材料自带当前版本技能，新使用者不需要再接收一份个人目录文件。
+	if _, err = s.SyncBuiltinSkills(); err != nil {
+		return "", err
+	}
 	return folder, nil
 }
 
@@ -140,7 +144,12 @@ func VerificationPrompt(version string, item workspace.Item, start, end string, 
 		return fmt.Sprintf("发布基线规则不可用：%v", err)
 	}
 
-	// 技能路径从本机配置读取，便于迁移；业务字段仅作为 JSON 数据附加。
-	text := strings.ReplaceAll(policyText, "__LOG_SKILL__", config.LogSkill)
-	return strings.ReplaceAll(text, "__CONTEXT__", string(payload))
+	// 内置日志与环境规则保证新电脑无需依赖某个用户的个人技能目录。
+	rules, entry, err := verificationSkillRules(config.LogSkill)
+	if err != nil {
+		return fmt.Sprintf("内置日志规则不可用：%v", err)
+	}
+	// 补充技能仅作可选入口，本轮环境、时间窗和只读约束仍按固定任务要求执行。
+	text := strings.ReplaceAll(policyText, "__LOG_SKILL__", entry)
+	return rules + "\n\n本次验证任务：\n" + strings.ReplaceAll(text, "__CONTEXT__", string(payload))
 }
