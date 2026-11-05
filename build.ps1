@@ -28,7 +28,7 @@ try {
     $taskSourcePaths = @('cmd','internal','web','build','tools','examples','go.mod','go.sum','build.ps1','package.json','.gitignore','使用说明.txt')
     if (Test-Path -LiteralPath (Join-Path $taskRoot 'package-lock.json')) { $taskSourcePaths += 'package-lock.json' }
     # 发布工作流与工程说明属于可重建源码；CI 不依赖本机工具链和私有运行数据。
-    foreach ($taskOptional in @('.github','readme.txt','.prettierignore','AGENTS.md')) {
+    foreach ($taskOptional in @('.github','readme.txt','.prettierignore','.gitattributes','AGENTS.md')) {
         if (Test-Path -LiteralPath (Join-Path $taskRoot $taskOptional)) { $taskSourcePaths += $taskOptional }
     }
     # 示例采用公开白名单；本机业务示例及历史生成脚本虽然被 Git 忽略，也不能混入源码 ZIP。
