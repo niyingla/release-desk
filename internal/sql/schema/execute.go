@@ -31,9 +31,14 @@ func Run(ctx context.Context, statements []string, access Access, checkOnly bool
 	operations := make([]Operation, len(statements))
 	checks := []Check{}
 	unknownReasons := []string{}
+	temporaryCount := 0
 	for i, source := range statements {
 		operations[i] = Parse(source)
 		op := operations[i]
+		// 临时表随连接销毁，历史只读复核无法重建本次初始化过程。
+		if op.Temporary {
+			temporaryCount++
+		}
 		if op.Structural && !op.Supported {
 			unknownReasons = append(unknownReasons, op.Reason)
 		}
@@ -44,6 +49,10 @@ func Run(ctx context.Context, statements []string, access Access, checkOnly bool
 	checks = finalChecks(checks)
 	// 目标定义可被后续同名修改覆盖，不能拿中间态阻止已成功库的只读复核。
 	if checkOnly {
+		// 即使脚本还包含普通 DDL，也不能拿持久表核验冒充临时快照及数据初始化复核。
+		if temporaryCount > 0 {
+			return "", &VerificationError{Message: "历史已成功库仅复核：临时表随连接结束销毁，初始化结果需业务核对，未重放数据", Unverified: true}
+		}
 		// 成功历史只能免除重复数据写入，不能免除实际结构查询。
 		if len(checks) == 0 || len(unknownReasons) > 0 {
 			return "", &VerificationError{Message: "历史已成功库仅复核：包含无法完整自动核验的结构语句，请人工核对", Unverified: true}
@@ -114,6 +123,10 @@ func Run(ctx context.Context, statements []string, access Access, checkOnly bool
 	}
 	if len(unknownReasons) > 0 {
 		return "", &VerificationError{Message: "SQL 已返回，部分结构语句仍需人工核验：" + strings.Join(unknownReasons, "；"), Unverified: true}
+	}
+	// 会话中间表只报告执行完成，不能宣称其数据或最终业务结果已经验收。
+	if temporaryCount > 0 {
+		return fmt.Sprintf("%d 条语句完成 · %d 张会话临时表 · 影响 %d 行 · 临时表仅为会话中间数据，初始化结果需业务核对", len(statements), temporaryCount, affected), nil
 	}
 	if len(checks) > 0 {
 		return fmt.Sprintf("实际结构核验通过 · %d 条语句 · %d 条已存在或一致而跳过 · 影响 %d 行", len(statements), skipped, affected), nil

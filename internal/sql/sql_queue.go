@@ -140,8 +140,9 @@ func (s *Service) StartSQLQueue(preview SQLQueuePreview, config DBConfig, run fu
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	// 与单条执行共用占用检查，连续点击或其他窗口不能插入第二个执行入口。
-	if s.Closing || s.SQLActive() || s.AIBusy {
-		return errors.New("请等待当前任务完成后再批量执行")
+	// 扫描可并行，但 SQL 批次之间与 AI 验证的互斥规则保持一致。
+	if err := s.CheckSQLAvailability(); err != nil {
+		return err
 	}
 	// 队列环境与每条脚本都需复核，即使同一主机有两份连接也不能混用。
 	if workspace.EffectiveSQLEnvironment(preview.Environment) != config.Environment {

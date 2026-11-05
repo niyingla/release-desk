@@ -8,6 +8,7 @@ import (
 	fileservice "release-desk/internal/files"
 	gitservice "release-desk/internal/git"
 	gitrepo "release-desk/internal/git/repository"
+	"release-desk/internal/initialization"
 	releaseservice "release-desk/internal/release"
 	settingsservice "release-desk/internal/settings"
 	sqlservice "release-desk/internal/sql"
@@ -26,14 +27,15 @@ type App struct {
 }
 
 type services struct {
-	Release  *releaseservice.Service
-	Git      *gitservice.Service
-	SQL      *sqlservice.Service
-	AI       *aiservice.Service
-	Settings *settingsservice.Service
-	Files    *fileservice.Service
-	Tasks    *taskcenter.Service
-	Updates  *updateservice.Service
+	Initialization *initialization.Service
+	Release        *releaseservice.Service
+	Git            *gitservice.Service
+	SQL            *sqlservice.Service
+	AI             *aiservice.Service
+	Settings       *settingsservice.Service
+	Files          *fileservice.Service
+	Tasks          *taskcenter.Service
+	Updates        *updateservice.Service
 }
 
 // services 延迟建立本窗口的业务组件，确保所有接口使用同一组预览与任务状态。
@@ -49,8 +51,9 @@ func (a *App) services() *services {
 		}
 		// 各业务服务接收同一工作区，避免运行标记与人工状态出现两个来源。
 		a.components = &services{
-			Release: &releaseservice.Service{Store: a.Store},
-			Git:     &gitservice.Service{Store: a.Store, Git: a.Git},
+			Initialization: &initialization.Service{Store: a.Store},
+			Release:        &releaseservice.Service{Store: a.Store},
+			Git:            &gitservice.Service{Store: a.Store, Git: a.Git},
 			// SQL 服务独占预览集合，令牌不会混入版本文件或 AI 协议。
 			SQL:      &sqlservice.Service{Store: a.Store, Plans: map[string]sqlservice.Plan{}},
 			AI:       &aiservice.Service{Store: a.Store},

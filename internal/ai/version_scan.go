@@ -62,22 +62,43 @@ func (a *Service) AIScan(body []byte) (any, error) {
 // StartVersionScan 固定输入快照并提交一个后台扫描任务。
 // 参数 name：用户选定版本的精确名称，不自动创建其他版本。
 // 参数 runner：只读扫描器；生产调用 CLI，测试使用模拟结果。
-// 返回：成功返回 nil；版本不存在、SQL 或 Codex 正忙时不启动任务。
+// 返回：成功返回 nil；版本不存在、退出或 Codex 正忙时不启动任务，SQL 可独立运行。
 func (s *Service) StartVersionScan(name string, runner ScanRunner) error {
-	// 与执行和验收共用忙碌约束，扫描期间不会切换仓库配置。
+	// 整版扫描不限定事项 ID，仍复用统一启动及取消流程。
+	return s.startScan(name, "", runner)
+}
+
+// startScan 为整版扫描或单项代码更新建立同一条 AI 生命周期。
+// 参数 name：已保存版本名；参数 itemID：单项更新的稳定 ID，整版扫描时为空。
+// 参数 runner：只读候选生成器，不直接修改软件数据。
+// 返回：已接收返回 nil；占用冲突或目标不存在时不启动后台调用。
+func (s *Service) startScan(name, itemID string, runner ScanRunner) error {
+	// 扫描与验收共用 AI 占用，SQL 使用独立执行通道；配置修改仍受统一保护。
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	// 互斥检查与占用写入在同一临界区，连续点击只能启动一次。
 	if s.Closing {
 		return errors.New("软件正在退出，未启动扫描")
 	}
-	if s.AIBusy || s.SQLActive() {
-		return errors.New("请等待当前 SQL 或 Codex 任务完成")
+	if s.AIBusy {
+		return errors.New("请等待当前 Codex 任务完成")
 	}
 	v, exists := s.Versions[name]
 	// 已保存的版本才有可靠备份目标，不替用户猜测或新增版本。
 	if !exists {
 		return errors.New("请先保存版本")
+	}
+	// 单项任务只向模型提供这一条，其他事项不参与生成，合并时仍从当前版本保留。
+	title := ""
+	if itemID != "" {
+		// 目标必须来自当前版本，不能以相似名称跨版本复用事项。
+		_, item, _, err := s.Find(name, itemID)
+		if err != nil || item.Kind != "verify" {
+			return errors.New("只能更新已有的变更与验证事项")
+		}
+		// 只改变局部快照；软件当前记录仍由保存阶段的受控合并维护。
+		v.Items = []workspace.Item{item}
+		title = item.Data["title"]
 	}
 	// 日志与提示只包含版本和作者，不输出源文件正文或凭据。
 	config := s.Config()
@@ -86,7 +107,7 @@ func (s *Service) StartVersionScan(name string, runner ScanRunner) error {
 	// 本轮持有独立取消句柄，手动终止不能影响其他验收或整个软件。
 	s.ScanCancel = cancel
 	previousScan := s.Scan
-	s.Scan = &workspace.VersionScanState{ID: identity.NewID(), Version: name, Author: config.GitAuthor, Running: true, Phase: "准备扫描", Started: workspace.Stamp(), Warnings: []string{}, Counts: map[string]int{}}
+	s.Scan = &workspace.VersionScanState{ID: identity.NewID(), Version: name, ItemID: itemID, ItemTitle: title, Author: config.GitAuthor, Running: true, Phase: "准备扫描", Started: workspace.Stamp(), Warnings: []string{}, Counts: map[string]int{}}
 	// 历史入口必须先落盘，失败时不启动收费调用或修改版本。
 	if err := s.SaveScanTask(); err != nil {
 		// 没有真正启动时恢复此前展示，不能留下一个空白的“扫描完成”。

@@ -4,6 +4,8 @@ package workspace
 type VersionScanState struct {
 	ID              string         `json:"id"`
 	Version         string         `json:"version"`
+	ItemID          string         `json:"item_id,omitempty"`
+	ItemTitle       string         `json:"item_title,omitempty"`
 	Author          string         `json:"author"`
 	Running         bool           `json:"running"`
 	Phase           string         `json:"phase"`

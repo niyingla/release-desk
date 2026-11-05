@@ -29,7 +29,7 @@ func (s *Store) SaveScanTask() error {
 	// 人工停止有独立终态，不能显示成模型故障。
 	// 待确认项保留为提示，不把模型警告升级成已验证结论。
 	// 摘要只说明本轮扫描，不替用户改变业务版本的发布状态。
-	// 固定五类顺序便于对比每轮结果，不依赖 map 的迭代顺序。
+	// 固定六类顺序便于对比每轮结果，不依赖 map 的迭代顺序。
 	// 扫描候选和凭据不进入任务文件，只保留阶段、统计与已公开的摘要。
 	if s.TaskHistory == nil || s.Scan == nil {
 		return nil
@@ -55,13 +55,19 @@ func (s *Store) SaveScanTask() error {
 	if scan.Error != "" {
 		rows = append(rows, tasks.Row{Title: "错误", State: "失败", Detail: scan.Error})
 	}
-	// 五类数量来自已经完成的扫描状态，不依据模型文字猜测成功数量。
+	// 六类数量来自已经完成的扫描状态，不依据模型文字猜测成功数量。
 	for _, kind := range Kinds {
 		if count := scan.Counts[kind]; count > 0 {
 			rows = append(rows, tasks.Row{Title: KindLabels[kind], State: "已合并", Detail: fmt.Sprintf("%d 项", count)})
 		}
 	}
-	return s.TaskHistory.Save(tasks.Record{ID: scan.ID, Kind: "scan", Version: scan.Version, Title: "版本扫描 · " + scan.Author, Running: scan.Running, Status: status, Progress: scan.Phase, Rows: rows})
+	// 单项更新同样可回看与停止，但名称须明确，不能误认为重新扫描了整版。
+	title := "版本扫描 · " + scan.Author
+	// 标题来自本轮启动快照，后续改名不会使历史记录关联到其他目标。
+	if scan.ItemID != "" {
+		title = "更新代码 · " + scan.ItemTitle
+	}
+	return s.TaskHistory.Save(tasks.Record{ID: scan.ID, Kind: "scan", Version: scan.Version, Title: title, Running: scan.Running, Status: status, Progress: scan.Phase, Rows: rows})
 }
 
 // SaveSQLTask 保存单条或多脚本任务，并覆盖全部目标库。

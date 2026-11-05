@@ -11,13 +11,14 @@ const escapeHTML = (value) =>
         ch
       ],
   );
-const kindOrder = ["job", "config", "sql", "topic", "verify"];
+const kindOrder = ["job", "config", "sql", "topic", "init_api", "verify"];
 const sqlPhaseOrder = ["创建表", "修改表", "初始化数据", "待识别"];
 const titles = {
   job: "定时任务",
   config: "配置",
   sql: "SQL",
   topic: "Topic",
+  init_api: "接口初始化",
   verify: "变更与验证",
 };
 const icons = {
@@ -156,7 +157,7 @@ const actionDescriptions = {
   "scan-version":
     "使用 Codex 扫描当前版本的代码和 Git 改动，整理并写入发版记录；会使用账号额度。",
   "edit-version": "修改当前版本的发布状态、日期和备注；在此可标记为已发布。",
-  export: "将当前版本的五类事项导出为 HTML 发布清单，便于查看和分享。",
+  export: "将当前版本的六类事项导出为 HTML 发布清单，便于查看和分享。",
   "confirm-scan":
     "确认使用 Codex 额度扫描弹窗中指定的版本，并增量写入发版记录。",
   "confirm-archive-version":
@@ -397,6 +398,14 @@ function sqlStatus(item) {
 }
 
 const columns = {
+  init_api: [
+    ["name", "接口名称", 20],
+    ["method", "方法", 8],
+    ["url", "接口路径", 23],
+    ["parameter_mode", "参数要求", 11],
+    ["prerequisites", "前置条件", 18],
+    ["status", "待办状态", 8],
+  ],
   job: [
     ["handler", "Handler 名称", 22],
     ["action", "操作类型", 10],
@@ -441,7 +450,8 @@ const columns = {
  * @returns {*} 当前展示结果；渲染方法只更新界面，不自动执行数据库或发布。
  */
 function fieldValue(item, field) {
-  if (field === "service" || field === "action") return item[field];
+  if (field === "service" || field === "action" || field === "status")
+    return item[field];
   if (field === "execution") return sqlStatus(item);
   if (field === "verification")
     return (
@@ -455,6 +465,12 @@ function fieldValue(item, field) {
   // 旧版本文件没有声明配置要求，不能当作已有默认值的可选配置。
   if (item.kind === "config" && field === "required")
     return item.data.required || state.config_requirements[0];
+  // 保留已经识别的服务内路径，但不能将它冒充带网关前缀的可调用地址。
+  if (item.kind === "init_api" && field === "url")
+    return (
+      item.data.url?.trim() ||
+      `${item.data.service_path || "服务内路径未识别"}（调用路径待确认）`
+    );
   return item.data[field] || "";
 }
 
@@ -620,8 +636,8 @@ function renderVersion() {
       : "发布事项与上线验证";
   $("#content").innerHTML =
     `<div class="page-head version-header"><div class="version-intro"><div class="eyebrow">VERSION / RELEASE CHECKLIST</div><h1>${escapeHTML(currentVersion)} ${badge(v.version.status)}${v.version.archived ? badge("已归档") : ""}</h1><div class="version-meta"><span class="subtitle">${escapeHTML(summary)}</span><span class="version-date">${escapeHTML(v.version.date || "未设置发布日期")}</span>${notes ? '<button class="text-link version-notes-link" data-action="version-notes">版本说明 ↗</button>' : ""}</div></div><div class="actions">${button("scan-version", "AI 扫描", "spark")}${archiveButton(v.version)}${button("edit-version", "版本设置", "settings")}${button("export", "导出清单", "download")}</div></div>
-    <div class="stats">${stat("本版变更", v.items.length, "定时任务 / 配置 / SQL / Topic / 验证", "file")}${stat("已完成事项", done, `共 ${v.items.length} 项 · ${v.items.length ? Math.round((done / v.items.length) * 100) : 0}% 完成`, "check", "green")}${stat("已标记上线", online, "定时任务与配置 · 人工核对", "upload", "blue")}${stat("待验证事项", v.items.filter((r) => r.kind === "verify" && r.verify_state !== "通过").length, "AI 分析代码与实际证据后回填结论", "spark", "amber")}</div>
-    <div class="tabs">${kindOrder.map((k) => `<button class="tab ${currentKind === k ? "active" : ""}" data-action="tab" data-kind="${k}">${icon({ job: "clock", config: "file", sql: "database", topic: "message", verify: "check" }[k])}${titles[k]}<span class="tab-count">${v.items.filter((r) => r.kind === k).length}</span></button>`).join("")}</div>
+    <div class="stats">${stat("本版变更", v.items.length, "定时任务 / 配置 / SQL / Topic / 初始化 / 验证", "file")}${stat("已完成事项", done, `共 ${v.items.length} 项 · ${v.items.length ? Math.round((done / v.items.length) * 100) : 0}% 完成`, "check", "green")}${stat("已标记上线", online, "定时任务与配置 · 人工核对", "upload", "blue")}${stat("待验证事项", v.items.filter((r) => r.kind === "verify" && r.verify_state !== "通过").length, "AI 分析代码与实际证据后回填结论", "spark", "amber")}</div>
+    <div class="tabs">${kindOrder.map((k) => `<button class="tab ${currentKind === k ? "active" : ""}" data-action="tab" data-kind="${k}">${icon({ job: "clock", config: "file", sql: "database", topic: "message", init_api: "arrow", verify: "check" }[k])}${titles[k]}<span class="tab-count">${v.items.filter((r) => r.kind === k).length}</span></button>`).join("")}</div>
     <div class="panel"><div class="panel-head"><div class="panel-title">${titles[currentKind]}<small>${currentKind === "sql" ? "创建表 → 修改表 → 初始化数据" : "双击单元格复制完整内容"}</small></div><div class="tools">${currentKind === "sql" ? sqlEnvironmentControl() : ""}<label class="search">${icon("search")}<input id="table-search" placeholder="搜索本页记录…" value="${escapeHTML(searchText)}"></label>${currentKind === "sql" ? button("refresh-sql", "刷新 SQL", "refresh") + button("import-git", "从 Git 导入", "git") : ""}${button("new-item", `新增${titles[currentKind]}`, "plus", "primary")}</div></div>${bulkControls()}
     <div class="table-wrap"><table><thead><tr>${canBulk ? '<th class="table-check-cell"><input type="checkbox" data-bulk-all aria-label="全选当前筛选结果"></th>' : ""}${columns[currentKind].map((c) => `<th style="width:${c[2]}%">${c[1]}</th>`).join("")}<th style="width:12%">${["job", "config"].includes(currentKind) ? "线上状态" : "操作"}</th></tr></thead><tbody>${visible
       .map(
@@ -642,11 +658,11 @@ function renderVersion() {
                   : key === "frequency"
                     ? ` data-preview="${escapeHTML(display)}"`
                     : "";
-              return `<td data-copy="${escapeHTML(value)}"${preview}>${["execution", "verification", "action"].includes(key) ? badge(value) : `<span class="cell-text ${["handler", "frequency", "prefix", "topic", "group"].includes(key) ? "mono" : ""}">${escapeHTML(display || "—")}</span>`}</td>`;
+              return `<td data-copy="${escapeHTML(value)}"${preview}>${["execution", "verification", "action", "status"].includes(key) ? badge(value) : `<span class="cell-text ${["handler", "frequency", "prefix", "topic", "group"].includes(key) ? "mono" : ""}">${escapeHTML(display || "—")}</span>`}</td>`;
             })
             .join(
               "",
-            )}<td>${["job", "config"].includes(currentKind) ? `<button class="state-button" data-action="online" data-id="${escapeHTML(r.id)}" title="点击切换线上状态">${badge(r.online || "待上线")}</button>` : `<div class="row-actions"><button class="text-link" data-action="edit-item" data-id="${escapeHTML(r.id)}">编辑</button>${verificationRetryButton(r)}</div>`}</td></tr>`,
+            )}<td>${["job", "config"].includes(currentKind) ? `<button class="state-button" data-action="online" data-id="${escapeHTML(r.id)}" title="点击切换线上状态">${badge(r.online || "待上线")}</button>` : `<div class="row-actions"><button class="text-link" data-action="edit-item" data-id="${escapeHTML(r.id)}">编辑</button>${verificationRetryButton(r)}${itemCodeRefreshButton(r)}</div>`}</td></tr>`,
       )
       .join(
         "",
@@ -704,6 +720,7 @@ function renderDetail() {
           : "description";
   let code = r.data[primary] || "暂无详细内容";
   if (currentKind === "verify") code = verificationItemText(r);
+  if (currentKind === "init_api") code = initializationText(r);
   const codeHTML = highlight(code, currentKind)
     .split("\n")
     .map(
@@ -730,22 +747,29 @@ function renderDetail() {
             ["线上状态", r.online],
             ["标记时间", r.online_at],
           ]
-        : currentKind === "verify"
+        : currentKind === "init_api"
           ? [
               ["涉及服务", r.service],
-              ["验证状态", r.verify_state],
-              ["预期结果", r.data.expected],
-              ["验证历史", `${r.verify_runs?.length || 0} 次`],
-            ]
-          : [
-              ["涉及服务", r.service],
-              [currentKind === "job" ? "操作类型" : "变更类型", r.action],
               ["待办状态", r.status],
-              ["线上状态", r.online],
-              ["标记时间", r.online_at],
-            ];
+              ["前置条件", r.data.prerequisites],
+              ["结果核对", r.data.expected],
+            ]
+          : currentKind === "verify"
+            ? [
+                ["涉及服务", r.service],
+                ["验证状态", r.verify_state],
+                ["预期结果", r.data.expected],
+                ["验证历史", `${r.verify_runs?.length || 0} 次`],
+              ]
+            : [
+                ["涉及服务", r.service],
+                [currentKind === "job" ? "操作类型" : "变更类型", r.action],
+                ["待办状态", r.status],
+                ["线上状态", r.online],
+                ["标记时间", r.online_at],
+              ];
   $("#detail").innerHTML =
-    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? button("execute", "一键执行", "play", "primary") + button("retry", "重试失败库", "refresh") + button("check-structure", "仅核验结构", "check") + button("history", "执行明细", "clock") : ""}${currentKind === "verify" ? verificationDetailActions(r) : button("copy-detail", currentKind === "config" ? "复制配置" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
+    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? button("execute", "一键执行", "play", "primary") + button("retry", "重试失败库", "refresh") + button("check-structure", "仅核验结构", "check") + button("history", "执行明细", "clock") : ""}${currentKind === "init_api" ? button("call-initialization", r.data.url?.trim() ? "手动调用" : "补全调用路径", r.data.url?.trim() ? "play" : "edit", "primary") : ""}${currentKind === "verify" ? verificationDetailActions(r) : button("copy-detail", currentKind === "config" ? "复制配置" : currentKind === "init_api" ? "复制调用信息" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${k}</dt><dd>${escapeHTML(v)}</dd>`)
       .join(
@@ -975,7 +999,7 @@ async function showVersionForm(name = "") {
   showModal(
     name ? "版本设置" : "新建版本",
     "版本名称创建后固定；每个版本对应一个可供 AI 更新的文件。",
-    `<form id="version-form" class="form-grid" data-creating="${!name}">${name ? formField("版本名称", "name", version.name) : versionNameField()}${formField("版本状态", "status", version.status, { select: ["计划中", "进行中", "已发布"] })}${formField("计划发布日期", "date", version.date, { type: "date" })}${formField("版本备注", "notes", version.notes, { multiline: true, full: true })}${!name ? '<label class="scan-option full"><input type="checkbox" name="ai_scan"><span><b>保存后让 AI 扫描此版本</b><small>复用已登录的 Codex，按设置中的作者读取代码和 Git，整理五类事项；会使用账号额度。</small></span></label>' : ""}</form>`,
+    `<form id="version-form" class="form-grid" data-creating="${!name}">${name ? formField("版本名称", "name", version.name) : versionNameField()}${formField("版本状态", "status", version.status, { select: ["计划中", "进行中", "已发布"] })}${formField("计划发布日期", "date", version.date, { type: "date" })}${formField("版本备注", "notes", version.notes, { multiline: true, full: true })}${!name ? '<label class="scan-option full"><input type="checkbox" name="ai_scan"><span><b>保存后让 AI 扫描此版本</b><small>复用已登录的 Codex，按设置中的作者读取代码和 Git，整理六类事项；会使用账号额度。</small></span></label>' : ""}</form>`,
     `${name ? button("delete-version", "删除版本", "", "danger") : '<span class="left">保存后自动生成版本 JSON 文件</span>'}${button("close-modal", "取消")}${button("save-version", "保存版本", "check", "primary")}`,
   );
   if (name) $("[name=name]", $("#version-form")).readOnly = true;
@@ -1014,19 +1038,24 @@ function showItemForm(item = null) {
         "expected",
         "manual_reason",
         "result",
+        "params",
+        "body",
+        "prerequisites",
       ].includes(key);
       const opts = {
         multiline,
         full: multiline,
         tall: ["sql", "content"].includes(key),
         select:
-          key === "verification_mode"
-            ? ["自动验证", "手动验证"]
-            : key === "side"
-              ? ["租户端", "服务商端", "平台端"]
-              : r.kind === "config" && key === "required"
-                ? state.config_requirements
-                : null,
+          key === "parameter_mode"
+            ? ["无参", "必填参数"]
+            : key === "verification_mode"
+              ? ["自动验证", "手动验证"]
+              : key === "side"
+                ? ["租户端", "服务商端", "平台端"]
+                : r.kind === "config" && key === "required"
+                  ? state.config_requirements
+                  : null,
       };
       return formField(
         label,
@@ -1048,10 +1077,23 @@ function showItemForm(item = null) {
     "业务内容自动保存；线上状态、测试执行和验证历史独立维护。",
     `<form id="item-form" class="form-grid"><input type="hidden" name="id" value="${escapeHTML(r.id)}">${formField("涉及服务", "service", r.service)}${formField(r.kind === "job" ? "操作类型" : "变更类型", "action", r.action, { select: state.action_options[r.kind] })}${formField("待办状态", "status", r.status, { select: ["待处理", "进行中", "已完成"] })}${r.kind === "sql" ? `<div class="form-field">从文件读取${button("read-sql", "选择 .sql 文件", "folder")}</div>` : ""}${dataFields}</form>`,
     `${button("close-modal", "取消")}${button("save-item", "保存记录", "check", "primary")}`,
-    r.kind === "sql" || r.kind === "verify",
+    r.kind === "sql" || r.kind === "verify" || r.kind === "init_api",
     "edit-item",
   );
   $("#item-form").dataset.kind = r.kind;
+  if (r.kind === "init_api") {
+    const form = $("#item-form");
+    const updateParameters = () => {
+      for (const name of ["params", "body"]) {
+        const field = form.elements[name];
+        const disabled = form.elements.parameter_mode.value === "无参";
+        field.disabled = disabled;
+        field.closest(".form-field").style.display = disabled ? "none" : "";
+      }
+    };
+    form.elements.parameter_mode.addEventListener("change", updateParameters);
+    updateParameters();
+  }
   if (r.kind === "job") ReleaseCron.updatePreview($("#job-cron"));
   // 类型属于 SQL 正文的派生信息，目录名和手工标签都不能覆盖识别结果。
   const phaseField = $('#item-form [name="phase"]');
@@ -1077,7 +1119,7 @@ async function showSettings() {
   showModal(
     "连接与设置",
     "测试和 UAT 连接独立保存，密码使用当前 Windows 用户加密；不使用的环境可留空。",
-    `<form id="settings-form">${sqlConnectionFields(profiles)}<div class="section-label">Git 与 Codex</div><div class="form-grid">${formField("SQL 仓库目录", "sql_repository", config.sql_repository, { full: true })}${formField("代码仓库目录", "code_repository", config.code_repository, { full: true })}${formField("Git 提交作者", "git_author", config.git_author)}${formField("日志技能文件", "log_skill", config.log_skill, { full: true })}${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}</div><div class="notice info" style="margin-top:18px;margin-bottom:0">数据库匹配规则在本地 settings.json 中集中维护。修改后重启软件生效。<br>记录目录：${escapeHTML(state.data_dir)}</div></form>`,
+    `<form id="settings-form">${sqlConnectionFields(profiles)}<div class="section-label">初始化接口</div><div class="form-grid">${formField("环境入口（JSON，测试 / 线上三端）", "initialization_base_urls", JSON.stringify(config.initialization_base_urls || {}, null, 2), { full: true, multiline: true })}</div><div class="section-label">Git 与 Codex</div><div class="form-grid">${formField("SQL 仓库目录", "sql_repository", config.sql_repository, { full: true })}${formField("代码仓库目录", "code_repository", config.code_repository, { full: true })}${formField("Git 提交作者", "git_author", config.git_author)}${formField("日志技能文件", "log_skill", config.log_skill, { full: true })}${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}</div><div class="notice info" style="margin-top:18px;margin-bottom:0">数据库匹配规则在本地 settings.json 中集中维护。修改后重启软件生效。<br>记录目录：${escapeHTML(state.data_dir)}</div></form>`,
     `${button("files", "版本文件夹", "folder")}${button("open-data", "数据目录", "folder")}${button("close-modal", "取消")}${button("save-settings", "保存设置", "check", "primary")}`,
   );
   $("#settings-form").config = config;
@@ -1355,7 +1397,7 @@ async function startVersionScan(name) {
  */
 function showScanProgress() {
   showModal(
-    "AI 扫描版本",
+    state.scan?.item_id ? "更新代码 · " + state.scan.item_title : "AI 扫描版本",
     "结果校验后自动备份并增量写入；终止扫描会保留已有版本记录。",
     "",
     button("close-modal", "收起"),
@@ -1424,7 +1466,7 @@ function renderScanStatus() {
 }
 
 /**
- * 展示扫描运行状态、五类候选数量和待确认信息。
+ * 展示扫描运行状态、六类候选数量和待确认信息。
  * @returns {void} 只渲染结构化状态，不启动新的 Codex 任务。
  */
 function renderScanProgress() {
@@ -1681,6 +1723,10 @@ async function handleAction(action, element) {
       break;
     case "copy-detail": {
       const r = selectedItem();
+      if (r.kind === "init_api") {
+        await copyText(initializationText(r));
+        break;
+      }
       await copyText(
         r.data[
           currentKind === "config"
@@ -1706,11 +1752,23 @@ async function handleAction(action, element) {
       await copyText(prompt);
       break;
     }
+    case "refresh-item-code":
+      confirmItemCodeRefresh(element.dataset.id);
+      break;
+    case "confirm-item-code-refresh":
+      await startItemCodeRefresh(element);
+      break;
     case "scan-version":
       // 已有任务时打开其进度，重复点击不会产生重复收费任务。
       if (state.scan?.running) {
         showScanProgress();
       } else confirmVersionScan();
+      break;
+    case "call-initialization":
+      await showInitializationRequest();
+      break;
+    case "send-initialization":
+      await sendInitializationRequest(element);
       break;
     case "confirm-scan":
       if (modalType !== "scan-confirm") return;
@@ -1750,6 +1808,7 @@ async function handleAction(action, element) {
       await saveSQLConnections(data);
       await api("settings/save", {
         ...form.config,
+        initialization_base_urls: JSON.parse(data.initialization_base_urls),
         sql_repository: data.sql_repository,
         code_repository: data.code_repository,
         git_author: data.git_author,

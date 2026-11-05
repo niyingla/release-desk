@@ -98,6 +98,12 @@ func NormalizeItem(item *Item) error {
 	if item.Kind == "job" {
 		NormalizeJobFrequency(item.Data)
 	}
+	// 初始化调用允许先保存模板，具体必填值由用户每次发送时填写。
+	if item.Kind == "init_api" {
+		if err := NormalizeInitialization(item.Data); err != nil {
+			return err
+		}
+	}
 
 	// SQL 入库只校验必填信息，语法与目标范围在执行预览时检查。
 	// 这样扩展语法脚本仍能被记录、查看和复制，暂不支持执行时给出明确提示。

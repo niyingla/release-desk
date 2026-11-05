@@ -301,7 +301,8 @@ func (s *Service) Plan(version, id string, retry bool, environment string, verif
 
 	_, item, _, e := s.Find(version, id)
 
-	busy := s.SQLActive() || s.AIBusy || s.Closing
+	// 扫描与 SQL 独立；预览、单条和批量复用同一任务准入规则。
+	availabilityErr := s.CheckSQLAvailability()
 
 	history := workspace.Clone(s.History)
 
@@ -310,8 +311,8 @@ func (s *Service) Plan(version, id string, retry bool, environment string, verif
 		return Plan{}, e
 	}
 
-	if busy {
-		return Plan{}, errors.New("已有 SQL 执行任务，请等待完成")
+	if availabilityErr != nil {
+		return Plan{}, availabilityErr
 	}
 
 	if item.Kind != "sql" {

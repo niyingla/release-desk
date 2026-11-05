@@ -31,7 +31,7 @@ type ReportSection struct {
 }
 
 // RenderReport 生成已转义的版本发布清单。
-// 参数 v：当前选中版本的独立完整快照，包含其五类记录。
+// 参数 v：当前选中版本的独立完整快照，包含其六类记录。
 // 返回：返回 HTML 清单字节；模板生成失败时返回错误，记录内容均作为转义文本。
 func RenderReport(v workspace.VersionFile) ([]byte, error) {
 	// 报告按软件固定业务顺序展示。

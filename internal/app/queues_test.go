@@ -273,7 +273,11 @@ func TestSQLQueueRetainsExclusiveAccessBetweenScripts(t *testing.T) {
 	if a.Store.EnsureIdle() == nil {
 		t.Fatal("脚本切换间隙释放了 SQL 队列占用")
 	}
-	if err := (&aiservice.Service{Store: s}).StartVersionScan("5.7.3", nil); err == nil {
-		t.Fatal("脚本切换时启动了扫描")
+	// 扫描已允许并行，但队列换脚本期间仍不能插入另一条 SQL。
+	s.Mu.Lock()
+	err := (&sqlservice.Service{Store: s}).CheckSQLAvailability()
+	s.Mu.Unlock()
+	if err == nil {
+		t.Fatal("脚本切换时允许插入另一批 SQL")
 	}
 }

@@ -40,9 +40,11 @@ func (a *App) handlers() map[string]endpoint {
 		"git/refresh": a.services().Git.GitRefresh,
 		"db/settings": a.services().SQL.DBSettings, "db/save": a.services().SQL.DBSave, "db/plan": a.services().SQL.DBPlan, "db/execute": a.services().SQL.DBExecute,
 		"ai/template": a.services().AI.AITemplate, "ai/verify": a.services().AI.AIVerify, "ai/prompt": a.services().AI.AIPrompt, "folder": a.services().Files.OpenFolder, "backup": a.services().Files.Backup, "restore": a.services().Files.Restore, "export": a.services().Files.Export,
-		"ai/scan":         a.services().AI.AIScan,
-		"ai/scan/cancel":  a.services().AI.CancelVersionScan,
-		"ai/verify-batch": a.services().AI.AIVerifyBatch, "ai/verify-batch/cancel": a.services().AI.CancelVerifyBatch,
+		"ai/scan":             a.services().AI.AIScan,
+		"ai/item/refresh":     a.services().AI.RefreshItemCode,
+		"initialization/send": a.services().Initialization.Send,
+		"ai/scan/cancel":      a.services().AI.CancelVersionScan,
+		"ai/verify-batch":     a.services().AI.AIVerifyBatch, "ai/verify-batch/cancel": a.services().AI.CancelVerifyBatch,
 		"db/batch/plan": a.services().SQL.DBBatchPlan, "db/batch/execute": a.services().SQL.DBBatchExecute, "db/batch/cancel": a.services().SQL.CancelSQLBatch,
 		"theme/save":   a.services().Settings.SaveTheme,
 		"settings/get": a.services().Settings.GetSettings, "settings/save": a.services().Settings.SaveSettings,
@@ -90,6 +92,10 @@ func (a *App) state(_ []byte) (any, error) {
 			item := &versions[vi].Items[ri]
 			if item.Kind == "sql" {
 				item.Data["content_digest"] = identity.Digest(item.Data["sql"])
+			}
+			// 初始化调用绑定展示时的完整事项，扫描更新后旧弹窗必须重新确认。
+			if item.Kind == "init_api" {
+				item.Data["content_digest"] = workspace.VerificationHash(*item)
 			}
 		}
 	}

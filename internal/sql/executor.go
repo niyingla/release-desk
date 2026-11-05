@@ -63,12 +63,9 @@ func (s *Service) Execute(plan Plan) error {
 	if err != nil {
 		return err
 	}
-	// 退出信号与启动在同一锁内检查，不允许窗口关闭后新开一批数据库写入。
-	if s.Closing {
-		return errors.New("软件正在退出，未启动 SQL")
-	}
-	if s.SQLActive() || s.AIBusy {
-		return errors.New("已有 SQL 运行任务")
+	// 退出信号与启动在同一锁内检查；扫描不占用独立的 SQL 执行通道。
+	if err := s.CheckSQLAvailability(); err != nil {
+		return err
 	}
 
 	statements, err := s.ValidateSQLPlan(plan, config)

@@ -7,6 +7,7 @@
     {"id":"demo-config","kind":"config","action":"新增","service":"example-service","status":"待处理","data":{"filename":"example.yml","prefix":"example.feature","content":"example:\n  feature:\n    enabled: true","required":"待确认","description":"填写真实业务前先核对代码默认值。"}},
     {"id":"demo-sql","kind":"sql","action":"新增","status":"待处理","data":{"name":"只读预览示例","side":"租户端","order":"1","sql":"SELECT 1;","description":"只用于说明协议，不自动执行。"}},
     {"id":"demo-topic","kind":"topic","action":"新增","status":"待处理","data":{"topic":"example.event.changed","description":"演示事件主题，分区和消费组按实际环境核对。"}},
+    {"id":"demo-init-api","kind":"init_api","action":"新增","status":"待处理","data":{"name":"上线后初始化接口示例（请替换）","side":"租户端","method":"POST","url":"/待填写真实接口路径","parameter_mode":"必填参数","body":"{\"业务参数\":\"\"}","prerequisites":"核对真实发布及数据前置条件","expected":"按实际接口返回和业务数据核对完成","description":"仅演示记录协议；没有实际可调用接口，Token 每次调用前临时输入。"}},
     {"id":"demo-verify","kind":"verify","action":"修改","service":"example-service","status":"待处理","data":{"title":"防止重复创建演示任务","change":"通过唯一业务键保护重复请求。","steps":"可结合版本代码与相关请求链核对，关注重试和并发边界；取证方法由 AI 按实际证据调整。","keywords":"","expected":"相同业务键的重复请求只产生一个有效任务；不以某句成功日志作为唯一条件。","result":""}}
   ]
 }

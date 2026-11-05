@@ -38,14 +38,18 @@ func InferSQLPhase(data map[string]string) string {
 func StatementPhase(tokens []SQLToken) int {
 	// 返回的是有限排序等级，不是 SQL 的执行结果或安全许可。
 	// 索引创建属于结构修改，不与 CREATE TABLE 混为同一种操作。
-	// 空白和纯注释不参与类型决策；临时表仍属于建表操作。
+	// 空白和纯注释不参与类型决策；临时表属于本连接的数据初始化过程。
 	// 首部判断不会把 SELECT 字符串或后面的字段名当作 SQL 命令。
 	if len(tokens) == 0 {
 		return 3
 	}
 	first := tokens[0].Text
 	if first == "create" && len(tokens) > 1 {
-		if tokens[1].Text == "table" || (tokens[1].Text == "temporary" && len(tokens) > 2 && tokens[2].Text == "table") {
+		// 会话快照不能排在依赖的持久字段变更之前，脚本内部顺序保持不变。
+		if tokens[1].Text == "temporary" && len(tokens) > 2 && tokens[2].Text == "table" {
+			return 2
+		}
+		if tokens[1].Text == "table" {
 			return 0
 		}
 		return 1

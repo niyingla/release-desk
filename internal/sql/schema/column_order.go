@@ -38,30 +38,6 @@ func positionedDefinitionChecks(table string, body []token) ([]Check, bool) {
 	return append(checks, Check{Table: table, Kind: "position", Name: checks[0].Name, Position: position}), true
 }
 
-// positionedClauseSQL 修复旧词法器将 FIRST/AFTER 识别为普通标识符的情况。
-// 参数 tokens：完整原子句单元；参数 checks：已经完整解析的位置与定义约束。
-// 返回：可发送的等价子句；只替换已经确认的位置关键字，列名继续安全引用。
-func positionedClauseSQL(tokens []token, checks []Check) string {
-	// 索引或普通定义没有位置，不能全局替换同名字段/字符串中的文字。
-	for _, check := range checks {
-		if check.Kind != "position" {
-			continue
-		}
-		parts := append([]token{}, tokens...)
-		// 原始词法单元供其他核验使用，只在副本修改输出关键字。
-		// FIRST 在末尾，AFTER 后面还保留一个经过引用的目标列名。
-		index, keyword := len(parts)-1, "FIRST"
-		if !check.Position.First {
-			index, keyword = len(parts)-2, "AFTER"
-		}
-		parts[index].raw = keyword
-		// 参照列 token 未修改，即使列名恰好是 first/after 也仍作为标识符。
-		return joinTokens(parts)
-	}
-	// 普通字段、索引和字符串全部沿用现有安全引用规则。
-	return joinTokens(tokens)
-}
-
 // finalColumnPositions 按作者顺序归并位置操作，保留最终仍成立的相邻约束。
 // 参数 checks：包含定义、删除、重命名及位置操作的顺序检查列表。
 // 返回：独立的位置约束；缺少原始前驱的复杂重排显式保留待核验状态。

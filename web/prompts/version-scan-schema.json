@@ -15,7 +15,7 @@
           "id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["job", "config", "sql", "topic", "verify"]
+            "enum": ["job", "config", "sql", "topic", "init_api", "verify"]
           },
           "action": {
             "type": "string",

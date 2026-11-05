@@ -153,11 +153,6 @@ func TestVersionScanRejectsBusyAndUnknownSQL(t *testing.T) {
 	if err = s.Save(sampleVersion()); err != nil {
 		t.Fatal(err)
 	}
-	s.Batch = &workspace.Batch{Running: true}
-	if err = (&aiservice.Service{Store: s}).StartVersionScan("5.7.3", nil); err == nil {
-		t.Fatal("与 SQL 并发启动")
-	}
-	s.Batch = nil
 	s.AIBusy = true
 	if err = (&aiservice.Service{Store: s}).StartVersionScan("5.7.3", nil); err == nil {
 		t.Fatal("与 Codex 并发启动")

@@ -48,6 +48,7 @@ type Clause struct {
 type Operation struct {
 	SQL, Table                    string
 	Structural, Supported, Create bool
+	Temporary                     bool
 	Clauses                       []Clause
 	Reason                        string
 }

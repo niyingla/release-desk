@@ -34,6 +34,16 @@ func ReleaseScanSkillPath() string {
 // 参数 config：固定的仓库和作者范围，不含数据库连接信息。
 // 返回：结构化候选或进程、超时、技能、结果格式错误；不会自行保存版本。
 func (s *Service) InvokeVersionScan(parent context.Context, exe string, version workspace.VersionFile, config workspace.Settings) (ScanResult, error) {
+	// 整版扫描沿用原提示词，单项更新由独立构建器提供明确的范围与固定 SHA。
+	return s.invokeScan(parent, exe, version, config, VersionScanPrompt)
+}
+
+// invokeScan 复用只读 Codex 进程、Schema 和有界输出协议。
+// 参数 parent：本轮可取消上下文；参数 exe：已发现的 Codex CLI 路径。
+// 参数 version：固定版本及事项快照；参数 config：不含凭据的仓库配置。
+// 参数 promptBuilder：整版或单项专用提示词生成器，不能指定输出路径。
+// 返回：结构化候选或准备、进程、协议错误；保存与范围校验由上层负责。
+func (s *Service) invokeScan(parent context.Context, exe string, version workspace.VersionFile, config workspace.Settings, promptBuilder func(workspace.VersionFile, workspace.Settings) (string, error)) (ScanResult, error) {
 	s.SetVersionScanPhase("准备 Codex 与扫描协议")
 	// 必须使用与独立对话相同的技能规则，技能缺失时明确提示安装路径。
 	var result ScanResult
@@ -55,7 +65,7 @@ func (s *Service) InvokeVersionScan(parent context.Context, exe string, version 
 	if err = fileio.AtomicWrite(schemaPath, schema); err != nil {
 		return result, err
 	}
-	prompt, err := VersionScanPrompt(version, config)
+	prompt, err := promptBuilder(version, config)
 	if err != nil {
 		return result, err
 	}
@@ -117,8 +127,17 @@ func ReadVersionScanResult(path string) (ScanResult, error) {
 // 参数 config：仓库、作者配置，不传入数据库凭据或环境密钥。
 // 返回：完整提示词；内嵌模板读取或上下文编码失败时返回错误。
 func VersionScanPrompt(version workspace.VersionFile, config workspace.Settings) (string, error) {
+	// 旧扫描记录是 ID 和业务来源线索，不能把它的验收结果带入新的发布判断。
+	clean := workspace.Clone(version)
+	for i := range clean.Items {
+		// 操作副本以保留软件中的历史；本轮重新从发布基线与最终代码推导。
+		clean.Items[i].VerifyRuns = nil
+		clean.Items[i].VerifyState = ""
+		delete(clean.Items[i].Data, "result")
+	}
 	// 明确传入作者和仓库，不依赖模型猜测当前工作目录的用途。
-	payload, err := json.MarshalIndent(map[string]any{"version": version, "code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor}, "", "  ")
+	// 显式标注历史输入与比较依据，避免 source_commit 被误认为已部署旧版。
+	payload, err := json.MarshalIndent(map[string]any{"version": clean, "existing_items_role": "scan_history", "comparison_basis": "published_release", "code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor}, "", "  ")
 	// 只序列化非凭据配置，数据库地址与密码不进入扫描上下文。
 	if err != nil {
 		return "", err
@@ -128,7 +147,12 @@ func VersionScanPrompt(version workspace.VersionFile, config workspace.Settings)
 	if err != nil {
 		return "", err
 	}
+	// 整版扫描与单项更新使用同一基线口径，发布前中间实现不能自动成为线上旧行为。
+	text, err := applyReleaseBaselinePolicy(string(source))
+	if err != nil {
+		return "", err
+	}
 	// 数据作为独立 JSON 附加；版本备注中的文字不改变工具与环境边界。
-	prompt := strings.ReplaceAll(string(source), "__SCAN_SKILL__", ReleaseScanSkillPath())
+	prompt := strings.ReplaceAll(text, "__SCAN_SKILL__", ReleaseScanSkillPath())
 	return strings.ReplaceAll(prompt, "__CONTEXT__", string(payload)), nil
 }

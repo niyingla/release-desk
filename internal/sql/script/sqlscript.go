@@ -12,6 +12,7 @@ import (
 type SQLToken struct {
 	Kind int
 	Text string
+	end  int
 }
 
 // SplitSQL 拆分并校验库内 SQL 脚本。
@@ -48,7 +49,7 @@ func SplitSQL(source string) ([]string, error) {
 			continue
 		}
 		if err = ValidateSQLStatement(part, tokens); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("第 %d 条语句校验失败：%w", len(result)+1, err)
 		}
 		result = append(result, strings.TrimSpace(part))
 	}
@@ -90,7 +91,8 @@ func ReadSQLTokens(source string) ([]SQLToken, error) {
 		if text == "" && kind < 256 {
 			text = string(rune(kind))
 		}
-		tokens = append(tokens, SQLToken{Kind: kind, Text: strings.ToLower(text)})
+		// 词法器预读一个字节；记录原文结束偏移，只用于兼容语法的校验副本。
+		tokens = append(tokens, SQLToken{Kind: kind, Text: strings.ToLower(text), end: min(lexer.Position-1, len(source))})
 	}
 
 	if lexer.LastError != nil {
@@ -117,6 +119,10 @@ func ValidateSQLStatement(source string, tokens []SQLToken) error {
 	}
 	if len(tokens) > 1 && slices.Contains([]string{"create", "alter", "drop"}, first) && slices.Contains([]string{"database", "schema", "user", "role", "procedure", "function", "trigger", "event"}, tokens[1].Text) {
 		return errors.New("仅允许目标库内表结构与数据变更")
+	}
+	// 旧语法库不认识 TEMPORARY；严格校验建表首部与 SELECT，不能直接放行解析失败的全文。
+	if first == "create" && len(tokens) > 2 && tokens[1].Text == "temporary" && tokens[2].Text == "table" {
+		return validateTemporaryTable(source, tokens)
 	}
 
 	// 连接由工具管理事务；修改 autocommit 或全局变量会破坏逐库执行语义。

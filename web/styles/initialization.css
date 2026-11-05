@@ -1,0 +1,356 @@
+/* 调用窗口使用独立布局，保持预览中的层次，不修改其他弹窗的表单网格。 */
+.modal.initialization-modal {
+  width: 1040px;
+  max-height: calc(100dvh - 60px);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+.initialization-modal .modal-head {
+  min-height: 88px;
+  padding: 25px 28px;
+  gap: 20px;
+  flex-shrink: 0;
+}
+.initialization-modal .modal-head h2 {
+  font-size: 19px;
+  letter-spacing: 0.3px;
+}
+.initialization-modal .modal-head p {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.initialization-modal .modal-head .icon-btn {
+  flex-shrink: 0;
+}
+.initialization-modal .modal-body {
+  padding: 25px 28px;
+}
+.init-request-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: start;
+}
+.init-request-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.init-request-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.init-route-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 18px 14px;
+}
+.init-route-method {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.init-method {
+  font:
+    700 12px Consolas,
+    monospace;
+  letter-spacing: 0.6px;
+  border: 1px solid color-mix(in srgb, var(--purple) 30%, transparent);
+  background: var(--purple-soft);
+  color: var(--purple);
+  padding: 5px 9px;
+  border-radius: 6px;
+}
+.init-route-side {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.init-route-meta .form-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+.init-route-meta select {
+  width: auto;
+  min-width: 116px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.init-route-label {
+  padding: 0 18px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+.init-endpoint {
+  font:
+    12px/1.95 Consolas,
+    "Microsoft YaHei UI",
+    monospace;
+  padding: 9px 18px 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 0;
+  color: var(--ink);
+}
+.init-no-params {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+.init-check {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+.init-no-params strong {
+  font-weight: 500;
+  font-size: 13px;
+}
+.init-no-params p {
+  color: var(--text-soft);
+  font-size: 11px;
+  margin: 5px 0 0;
+}
+.init-auth-card,
+.init-parameters {
+  padding: 18px;
+}
+.init-parameters {
+  border-top: 1px solid var(--line);
+}
+.init-section-head,
+.init-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+.init-section-head label,
+.init-section-head h3,
+.init-result-head h3 {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.init-note-tag {
+  font-size: 10px;
+  color: var(--text-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+.init-token-input {
+  display: flex;
+  align-items: center;
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.init-token-input:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--purple) 30%, transparent);
+  border-color: var(--purple);
+}
+.init-token-input span {
+  font:
+    11px Consolas,
+    monospace;
+  color: var(--text-soft);
+  padding: 0 13px;
+  border-right: 1px solid var(--line);
+}
+.init-token-input input {
+  height: 42px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  min-width: 0;
+  width: 100%;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 0 12px;
+}
+.init-token-input input::placeholder {
+  color: var(--text-soft);
+  opacity: 0.75;
+}
+.init-input-hint {
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.7;
+  margin: 10px 0 0;
+}
+.init-parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.init-parameter-grid textarea {
+  min-height: 125px;
+  font:
+    12px/1.8 Consolas,
+    monospace;
+  resize: vertical;
+}
+.init-request-notes {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 19px 18px;
+  min-width: 0;
+}
+.init-request-notes h3 {
+  font-size: 13px;
+  margin: 0 0 7px;
+}
+.init-service {
+  font:
+    11px/1.7 Consolas,
+    monospace;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+  margin-bottom: 17px;
+}
+.init-request-notes details {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+.init-request-notes summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.init-request-notes summary::-webkit-details-marker {
+  display: none;
+}
+.init-request-notes summary svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-soft);
+  transform: rotate(0deg);
+  transition: transform 0.15s;
+}
+.init-request-notes details[open] summary svg {
+  transform: rotate(90deg);
+}
+.init-request-notes details p {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.85;
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.init-after-send {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.85;
+}
+.init-after-send strong {
+  display: block;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.initialization-modal .modal-foot {
+  min-height: 72px;
+  padding: 17px 28px;
+  flex-shrink: 0;
+}
+.init-footer-note {
+  color: var(--text-soft);
+  font-size: 11px;
+  margin-right: auto;
+}
+/* 响应按需出现，正文有界滚动，HTTP 状态不使用业务通过的绿色标记。 */
+.init-result:empty {
+  display: none;
+}
+.init-result {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.init-result-head span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.init-response-body {
+  margin: 14px 0 0;
+  padding: 14px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font:
+    12px/1.8 Consolas,
+    "Microsoft YaHei UI",
+    monospace;
+}
+/* 窄窗口将说明放到输入区之后，正文滚动而按钮留在可见的底部。 */
+@media (max-width: 800px) {
+  .modal.initialization-modal {
+    max-height: calc(100dvh - 60px);
+  }
+  .initialization-modal .modal-head {
+    padding: 19px;
+  }
+  .initialization-modal .modal-body {
+    padding: 18px;
+  }
+  .init-request-layout,
+  .init-parameter-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .init-request-notes {
+    padding: 16px;
+  }
+  .initialization-modal .modal-foot {
+    padding: 15px 18px;
+  }
+  .init-footer-note {
+    display: none;
+  }
+  .init-route-meta {
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+}

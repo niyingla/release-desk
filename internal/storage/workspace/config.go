@@ -13,13 +13,14 @@ import (
 
 // Settings 保存本机环境配置，凭据由独立的 DPAPI 文件保存。
 type Settings struct {
-	VerificationConcurrency int                 `json:"verification_concurrency"`
-	SQLRepository           string              `json:"sql_repository"`
-	CodeRepository          string              `json:"code_repository"`
-	GitAuthor               string              `json:"git_author"`
-	LogSkill                string              `json:"log_skill"`
-	VerificationLogDomains  []string            `json:"verification_log_domains,omitempty"`
-	ScopeRules              map[string][]string `json:"scope_rules"`
+	InitializationBaseURLs  map[string]map[string]string `json:"initialization_base_urls,omitempty"`
+	VerificationConcurrency int                          `json:"verification_concurrency"`
+	SQLRepository           string                       `json:"sql_repository"`
+	CodeRepository          string                       `json:"code_repository"`
+	GitAuthor               string                       `json:"git_author"`
+	LogSkill                string                       `json:"log_skill"`
+	VerificationLogDomains  []string                     `json:"verification_log_domains,omitempty"`
+	ScopeRules              map[string][]string          `json:"scope_rules"`
 }
 
 // DefaultSettings 提供集中管理的初始本机配置。
@@ -29,7 +30,7 @@ func DefaultSettings() Settings {
 	// 这里集中的是用户已经指定的初始环境约定。
 
 	// 用户指定的初始路径集中在一个入口，换电脑后修改 settings.json 即可。
-	return Settings{VerificationConcurrency: policy.VerificationConcurrency, VerificationLogDomains: []string{policy.DefaultVerificationLogDomain}, SQLRepository: `D:\workCode\db`, CodeRepository: `D:\codeWork\qiyu-douyin`, GitAuthor: "huohuo", LogSkill: filepath.Join(os.Getenv("USERPROFILE"), ".codex", "skills", "bamboo-tls-query", "SKILL.md"), ScopeRules: map[string][]string{"租户端": {`^newlink_share.*$`, `^newlink\d*$`}, "服务商端": {`^sp\d*$`}, "平台端": {`^newlink_pf$`}}}
+	return Settings{InitializationBaseURLs: DefaultInitializationBaseURLs(), VerificationConcurrency: policy.VerificationConcurrency, VerificationLogDomains: []string{policy.DefaultVerificationLogDomain}, SQLRepository: `D:\workCode\db`, CodeRepository: `D:\codeWork\qiyu-douyin`, GitAuthor: "huohuo", LogSkill: filepath.Join(os.Getenv("USERPROFILE"), ".codex", "skills", "bamboo-tls-query", "SKILL.md"), ScopeRules: map[string][]string{"租户端": {`^newlink_share.*$`, `^newlink\d*$`}, "服务商端": {`^sp\d*$`}, "平台端": {`^newlink_pf$`}}}
 }
 
 // LoadSettings 读取或初始化本机设置。

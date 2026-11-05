@@ -18,16 +18,17 @@ import (
 	"release-desk/internal/versioning"
 )
 
-var Kinds = []string{"job", "config", "sql", "topic", "verify"}
+var Kinds = []string{"job", "config", "sql", "topic", "init_api", "verify"}
 
-var KindLabels = map[string]string{"job": "定时任务", "config": "配置文件", "sql": "SQL 变更", "topic": "Topic", "verify": "变更与验证"}
+var KindLabels = map[string]string{"job": "定时任务", "config": "配置文件", "sql": "SQL 变更", "topic": "Topic", "init_api": "接口初始化", "verify": "变更与验证"}
 
 var Fields = map[string][][2]string{
-	"job":    {{"handler", "Handler 名称"}, {"frequency", "频率 / Cron"}, {"description", "描述"}},
-	"config": {{"filename", "文件名称"}, {"prefix", "配置前缀"}, {"content", "配置内容"}, {"required", "是否必须配置"}, {"description", "描述"}},
-	"sql":    {{"name", "脚本名称"}, {"phase", "SQL 类型（自动识别）"}, {"side", "所属端"}, {"database", "数据库说明"}, {"order", "同类型内顺序"}, {"sql", "SQL 内容"}, {"rollback", "回滚 SQL / 说明"}, {"description", "描述"}},
-	"topic":  {{"topic", "Topic 名称"}, {"partitions", "分区数"}, {"group", "消费组"}, {"description", "变更描述"}},
-	"verify": {{"title", "修改事项"}, {"change", "修改内容"}, {"verification_mode", "验证方式"}, {"manual_reason", "需手动验证原因"}, {"steps", "参考验证步骤"}, {"keywords", "参考日志线索"}, {"expected", "参考预期结果"}, {"result", "实际验证结果"}},
+	"job":      {{"handler", "Handler 名称"}, {"frequency", "频率 / Cron"}, {"description", "描述"}},
+	"config":   {{"filename", "文件名称"}, {"prefix", "配置前缀"}, {"content", "配置内容"}, {"required", "是否必须配置"}, {"description", "描述"}},
+	"sql":      {{"name", "脚本名称"}, {"phase", "SQL 类型（自动识别）"}, {"side", "所属端"}, {"database", "数据库说明"}, {"order", "同类型内顺序"}, {"sql", "SQL 内容"}, {"rollback", "回滚 SQL / 说明"}, {"description", "描述"}},
+	"topic":    {{"topic", "Topic 名称"}, {"partitions", "分区数"}, {"group", "消费组"}, {"description", "变更描述"}},
+	"init_api": {{"name", "接口名称"}, {"side", "所属端"}, {"method", "请求方法"}, {"service_path", "服务内路径（不含网关前缀）"}, {"url", "网关调用路径（含服务前缀）"}, {"parameter_mode", "参数要求"}, {"params", "必填 Query 参数（JSON 模板）"}, {"body", "必填 Body 参数（JSON 模板）"}, {"prerequisites", "调用前置条件"}, {"expected", "结果核对方式"}, {"description", "描述"}},
+	"verify":   {{"title", "修改事项"}, {"change", "修改内容"}, {"verification_mode", "验证方式"}, {"manual_reason", "需手动验证原因"}, {"steps", "参考验证步骤"}, {"keywords", "参考日志线索"}, {"expected", "参考预期结果"}, {"result", "实际验证结果"}},
 }
 
 type Item struct {

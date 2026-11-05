@@ -38,6 +38,12 @@ func Parse(source string) Operation {
 	if len(tokens) == 0 || !slices.Contains([]string{"create", "alter", "drop", "rename"}, lower(tokens[0])) {
 		return op
 	}
+	// 临时表是同一连接内的数据中间态，不属于 information_schema 可核验的持久结构。
+	// 首部和查询已由脚本解析器严格校验；原文执行，失败仍立即停止当前库。
+	if len(tokens) > 2 && lower(tokens[0]) == "create" && lower(tokens[1]) == "temporary" && lower(tokens[2]) == "table" {
+		op.Temporary = true
+		return op
+	}
 	op.Structural = true
 	// 扩展约束不能只检查其中一部分后声称全部正确。
 	if unsupported(tokens) {
@@ -127,7 +133,8 @@ func alterClause(table string, tokens []token) (Clause, bool) {
 	// 重命名比较只归一列名大小写，不更改原始 SQL 文本。
 	// 返回的 SQL 片段只来自词法单元，字符串与标识符都已正确引用。
 	// 空子句不能当成成功，不允许仅凭 ADD 或 MODIFY 关键词猜测对象。
-	clause := Clause{SQL: joinTokens(tokens)}
+	// 动作位置与字段位置的词法身份不同，重组必须保留真实 ALTER 语法。
+	clause := Clause{SQL: alterClauseSQL(tokens, nil)}
 	if len(tokens) < 2 {
 		return clause, false
 	}
@@ -155,7 +162,7 @@ func alterClause(table string, tokens []token) (Clause, bool) {
 			}
 		}
 		clause.Checks = checks
-		clause.SQL = positionedClauseSQL(tokens, checks)
+		clause.SQL = alterClauseSQL(tokens, checks)
 		return clause, true
 	}
 	if slices.Contains([]string{"add", "modify"}, action) {
@@ -168,7 +175,7 @@ func alterClause(table string, tokens []token) (Clause, bool) {
 		checks, ok := positionedDefinitionChecks(table, body)
 		clause.Checks = checks
 		clause.SkipExisting = action == "add"
-		clause.SQL = positionedClauseSQL(tokens, checks)
+		clause.SQL = alterClauseSQL(tokens, checks)
 		return clause, ok
 	}
 	if action == "drop" {

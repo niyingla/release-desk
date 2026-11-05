@@ -36,18 +36,22 @@ func (s *Service) Templates() (string, error) {
 		return "", err
 	}
 
-	content := strings.ReplaceAll(string(guide), "__VERSION_DIR__", filepath.Join(s.Dir, "版本文件"))
+	// 外部 AI 填写说明沿用软件扫描与验证的基线规则，不能从旧扫描推断上线。
+	content, err := applyReleaseBaselinePolicy(strings.ReplaceAll(string(guide), "__VERSION_DIR__", filepath.Join(s.Dir, "版本文件")))
+	if err != nil {
+		return "", err
+	}
 	if err = fileio.AtomicWrite(filepath.Join(folder, "AI填写说明.txt"), []byte(content)); err != nil {
 		return "", err
 	}
 	return folder, nil
 }
 
-// NewTemplateVersion 创建包含五类事项的示例版本。
+// NewTemplateVersion 创建包含六类事项的示例版本。
 // 无业务入参；使用接收对象或本机启动上下文，不隐式触发外部写操作。
-// 返回：返回完整且合法的五类事项示例，状态均未表示上线或验收成功。
+// 返回：返回完整且合法的六类事项示例，状态均未表示上线或验收成功。
 func NewTemplateVersion() workspace.VersionFile {
-	// 五种业务类型各提供一个合法示例。
+	// 六种业务类型各提供一个合法示例。
 	// 示例 ID 用于说明稳定标识的含义。
 	// AI 应替换业务内容并保留已有项的 ID。
 	// 示例值不代表真实发布版本。
@@ -119,6 +123,8 @@ func VerificationPrompt(version string, item workspace.Item, start, end string, 
 	// 仓库与作者帮助 AI 定位目标改动，参考线索缺失不会限制其分析方法。
 	// 旧结论不是本轮证据，且不得把数据库连接或登录凭据传入模型。
 	data := map[string]any{"version": version, "action": item.Action, "service": item.Service, "change": workspace.VerificationData(item), "code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor, "start": start, "end": end, "timezone": "Asia/Shanghai"}
+	// 旧事项中的来源和修复描述需要重新核对，验收比较依据始终为实际已发布代码。
+	data["comparison_basis"] = "published_release"
 	if len(publication) > 0 && publication[0].Name == version {
 		// 只传人工维护状态与日期，冗长备注和旧结论不能进入本轮推断。
 		data["publication"] = map[string]string{"status": publication[0].Status, "date": publication[0].Date, "source": "用户维护的发布背景，不是已核实的部署 SHA"}
@@ -128,8 +134,13 @@ func VerificationPrompt(version string, item workspace.Item, start, end string, 
 	if err != nil {
 		return fmt.Sprintf("验证模板不可用：%v", err)
 	}
+	// 扫描阶段分类错误的旧记录也必须纠正，不能继续把开发中间版当作线上反例。
+	policyText, err := applyReleaseBaselinePolicy(string(source))
+	if err != nil {
+		return fmt.Sprintf("发布基线规则不可用：%v", err)
+	}
 
 	// 技能路径从本机配置读取，便于迁移；业务字段仅作为 JSON 数据附加。
-	text := strings.ReplaceAll(string(source), "__LOG_SKILL__", config.LogSkill)
+	text := strings.ReplaceAll(policyText, "__LOG_SKILL__", config.LogSkill)
 	return strings.ReplaceAll(text, "__CONTEXT__", string(payload))
 }
