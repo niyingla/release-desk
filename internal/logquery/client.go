@@ -35,6 +35,7 @@ func (t contextTransport) RoundTrip(request *http.Request) (*http.Response, erro
 	}
 	// 多个并发验证不能因单次巨量日志响应占满内存，SDK 解码仍保留其真实错误语义。
 	if response.ContentLength > policy.MaxLogResponseBytes {
+		// 超限正文不交给 SDK 缓存或解码，立即释放原始网络连接。
 		_ = response.Body.Close()
 		return nil, errors.New("TLS 响应过大，请缩小检索条件或采样量")
 	}
