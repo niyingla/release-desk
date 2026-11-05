@@ -149,7 +149,7 @@ func VerificationPrompt(version string, item workspace.Item, start, end string, 
 	if err != nil {
 		return fmt.Sprintf("内置日志规则不可用：%v", err)
 	}
-	// 补充技能仅作可选入口，本轮环境、时间窗和只读约束仍按固定任务要求执行。
+	// 日志连接使用软件内置入口或已授权 MCP，不再把旧个人技能路径交给模型。
 	text := strings.ReplaceAll(policyText, "__LOG_SKILL__", entry)
 	return rules + "\n\n本次验证任务：\n" + strings.ReplaceAll(text, "__CONTEXT__", string(payload))
 }

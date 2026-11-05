@@ -63,7 +63,7 @@ func privatePathReason(name string) string {
 		return "非公开业务示例"
 	}
 	base := strings.ToLower(path.Base(clean))
-	if base == "settings.json" || base == "ui-preferences.json" || base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".log") || strings.HasPrefix(base, "connection") && strings.HasSuffix(base, ".json") {
+	if base == "settings.json" || base == "ui-preferences.json" || base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".log") || (strings.HasPrefix(base, "connection") || strings.HasPrefix(base, "log-connection") || strings.HasPrefix(base, "log-access")) && strings.HasSuffix(base, ".json") {
 		return "本机设置、凭据或日志文件"
 	}
 	return ""

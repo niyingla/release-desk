@@ -28,6 +28,9 @@ func (a *App) handlers() map[string]endpoint {
 	// 批次预览、启动和停止各有独立端点，勾选或全选本身不能触发外部调用。
 
 	return map[string]endpoint{
+		// 日志凭据有独立加密入口，设置摘要、资源读取与连接测试不触发业务验证。
+		"logs/settings": a.services().Logs.Settings, "logs/save": a.services().Logs.Save,
+		"logs/projects": a.services().Logs.Projects, "logs/test": a.services().Logs.Test,
 		// 逐项排队与并发偏好独立于 SQL 执行，均由本机鉴权入口保护。
 		"ai/verify/cancel-queued":  a.services().AI.CancelQueuedVerification,
 		"verification/concurrency": a.services().Settings.SaveVerificationConcurrency,

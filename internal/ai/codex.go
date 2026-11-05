@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"release-desk/internal/identity"
+	"release-desk/internal/logquery"
 	"release-desk/internal/platform/process"
 	"release-desk/internal/policy"
 	"release-desk/internal/storage/fileio"
@@ -228,6 +229,16 @@ func (s *Service) InvokeCodex(parent context.Context, exe string, req VerifyRequ
 	if err := os.MkdirAll(runDir, 0700); err != nil {
 		return workspace.VerifyResult{}, err
 	}
+	// 日志凭据仅进入当前用户加密文件，模型获得的是范围固定的查询入口。
+	logAccess, logInstructions, err := logquery.PrepareAccess(s.Dir, runDir, req.Start, req.End, workspace.LogDomains(config))
+	if err != nil {
+		return workspace.VerifyResult{}, err
+	}
+	if logAccess != "" {
+		// 无论成功、失败或取消，任务结束后拒绝再次使用这一轮访问文件。
+		defer os.Remove(logAccess)
+		ReportVerificationProgress(parent, "已固定生产后端日志 Topic 与用户查询时间窗，内置入口仅返回脱敏采样")
+	}
 	schema, err := web.Assets.ReadFile("prompts/verification-schema.json")
 	if err != nil {
 		return workspace.VerifyResult{}, err
@@ -257,7 +268,7 @@ func (s *Service) InvokeCodex(parent context.Context, exe string, req VerifyRequ
 	s.Mu.Lock()
 	publication := s.Versions[req.Version].Version
 	s.Mu.Unlock()
-	cmd.Stdin = strings.NewReader(VerificationPrompt(req.Version, item, req.Start, req.End, config, publication))
+	cmd.Stdin = strings.NewReader(logInstructions + "\n\n" + VerificationPrompt(req.Version, item, req.Start, req.End, config, publication))
 
 	// JSONL 只消费明确可公开的进度摘要，原始事件与 stderr 均不落盘。
 	cmd.Stdout = newVerificationEventWriter(ctx, func(summary string) { ReportVerificationProgress(ctx, summary) })

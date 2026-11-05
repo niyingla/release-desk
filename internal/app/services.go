@@ -9,6 +9,7 @@ import (
 	gitservice "release-desk/internal/git"
 	gitrepo "release-desk/internal/git/repository"
 	"release-desk/internal/initialization"
+	"release-desk/internal/logquery"
 	releaseservice "release-desk/internal/release"
 	settingsservice "release-desk/internal/settings"
 	sqlservice "release-desk/internal/sql"
@@ -28,6 +29,7 @@ type App struct {
 
 type services struct {
 	Initialization *initialization.Service
+	Logs           *logquery.Service
 	Release        *releaseservice.Service
 	Git            *gitservice.Service
 	SQL            *sqlservice.Service
@@ -52,6 +54,7 @@ func (a *App) services() *services {
 		// 各业务服务接收同一工作区，避免运行标记与人工状态出现两个来源。
 		a.components = &services{
 			Initialization: &initialization.Service{Store: a.Store},
+			Logs:           &logquery.Service{Store: a.Store},
 			Release:        &releaseservice.Service{Store: a.Store},
 			Git:            &gitservice.Service{Store: a.Store, Git: a.Git},
 			// SQL 服务独占预览集合，令牌不会混入版本文件或 AI 协议。

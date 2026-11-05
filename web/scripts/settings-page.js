@@ -15,12 +15,14 @@ async function showSettings() {
   );
   // 设置使用同一份快照，各标签不是分别读取和覆盖的独立表单。
   const config = await api("settings/get");
+  // 日志连接摘要有独立接口，普通设置响应与 AI 接入材料都不接触 AK/SK。
+  const logConfig = await api("logs/settings");
   // 数据库页沿用原字段前缀，保存时仍能精确定位到对应执行环境。
   // 初始化接口入口单独归类，避免混入数据库或日志配置。
   const sections = [
     ["database", "数据库", sqlConnectionFields(profiles)],
     // 日志页只管理网络范围和补充说明，避免把访问密钥当作普通字段导出。
-    ["logs", "日志", settingsLogFields(config)],
+    ["logs", "日志", settingsLogFields(config, logConfig)],
     // 仓库和作者属于同一代码上下文，AI 接入入口在此归类。
     ["code", "代码与 AI", settingsCodeFields(config)],
     // 接口基础地址不改变数据库连接，独立面板减少两类环境的混淆。
@@ -47,12 +49,13 @@ async function showSettings() {
     "连接与设置",
     "按功能切换设置，编辑内容统一保存；凭据不会写入版本记录。",
     `<form id="settings-form"><div class="settings-tabs" role="tablist" aria-label="设置分类">${tabs}</div><div class="settings-panels">${panels}</div></form>`,
-    `${button("open-data", "数据目录", "folder")}${button("close-modal", "取消")}${button("save-settings", "保存设置", "check", "primary")}`,
+    `${button("open-data", "数据目录", "folder")}${button("close-modal", "取消")}${button("logs-test", "测试连接", "", "", "hidden")}${button("save-settings", "保存设置", "check", "primary")}`,
   );
   // 分区样式限定在当前设置弹窗，其他编辑和执行确认窗口不受影响。
   // 保存流程仍从完整快照增量写入，保留当前页面未管理的其他配置字段。
   // 此处只保存页面快照，真正的连接加密和配置校验仍在受控后端完成。
   $("#settings-form").config = config;
+  $("#settings-form").logConfig = logConfig;
   $(".modal").classList.add("settings-modal");
   // 打开设置不会自动连接数据库或启动日志查询，用户可以先检查再决定是否保存。
   // 点击切换由统一事件入口处理；这里仅补充标签组的键盘导航。
@@ -96,13 +99,17 @@ function settingsCodeFields(config) {
 
 /**
  * 生成日志取证的现有非敏感设置，明确规则和连接授权的边界。
- * @param {object} config 当前日志补充技能和允许主机设置，不含访问密钥。
- * @returns {string} 可选本机补充入口、网络范围和实际连接方式说明。
+ * @param {object} config 当前允许日志主机的非敏感设置。
+ * @param {object} logConfig 后端提供的日志连接摘要，不包含已有访问密钥。
+ * @returns {string} 内置 TLS 连接、固定环境映射及折叠的高级网络设置。
  */
-function settingsLogFields(config) {
-  // 当前通过 MCP 或已有只读脚本取数，不能展示尚未实现的直连密钥保存功能。
-  // 补充技能留空仍使用内置规则，允许主机也不代表该数据源已完成鉴权。
-  return `<div class="notice info">日志查询与环境路由规则已内置，随软件一起更新。当前复用本机已配置的 MCP 或只读查询脚本；连接和密钥由相应工具管理，软件不会读取或复制到 AI 指引中。</div><div class="form-grid">${formField("本机补充日志技能（可选，留空使用内置规则）", "log_skill", config.log_skill, { full: true })}${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}</div><p class="settings-help">没有可用工具或查询授权时，验证会说明配置缺口；不会把连接失败当作业务没有日志。请勿在上述字段填写 AK、SK、密码或 Token。</p>`;
+function settingsLogFields(config, logConfig) {
+  // 技能已内置，页面只配置实际数据源，不再展示个人技能路径。
+  // 网络允许范围保留精确主机约束，高级设置不混入普通密钥输入。
+  return (
+    logConnectionFields(logConfig) +
+    `<details class="log-routing-details"><summary>网络访问范围 · 高级设置</summary>${formField("允许查询的日志域名（逗号或换行分隔）", "verification_log_domains", (config.verification_log_domains || []).join("\n"), { full: true, multiline: true })}<p class="settings-help">切换到新的 Endpoint 前，请先保存其精确主机名；查询不会自动扩大联网范围。</p></details>`
+  );
 }
 
 /**
@@ -124,6 +131,8 @@ function selectSettingsTab(id) {
   const tabs = [...document.querySelectorAll(".settings-tabs [role=tab]")];
   // 只允许页面已存在的标签，外部文本不能指定其他页面元素。
   if (!tabs.some((tab) => tab.dataset.tab === id)) return;
+  // 测试按钮只在日志页显示，其他分类保留原来的统一保存操作。
+  $(".modal-foot [data-action=logs-test]").hidden = id !== "logs";
   for (const tab of tabs) {
     const selected = tab.dataset.tab === id;
     // ARIA 状态与视觉选中态共用一个判断，不维护两套可能分叉的分类状态。

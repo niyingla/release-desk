@@ -1496,6 +1496,8 @@ async function showTemplateGuide() {
  * @returns {Promise<*>} 操作完成结果；失败抛出错误，由界面统一提示，不当作成功。
  */
 async function handleAction(action, element) {
+  // 日志连接设置只在用户主动操作时执行，不与付费扫描入口混用。
+  if (await handleLogSettingsAction(action)) return;
   // 接入只生成并复制本机说明，不参与扫描、SQL 或验证的运行占用。
   if (await handleAIOnboardingAction(action)) return;
   // 更新功能独立派发，网络检查不会进入业务任务队列。
@@ -1797,14 +1799,18 @@ async function handleAction(action, element) {
     case "save-settings": {
       const form = $("#settings-form"),
         data = Object.fromEntries(new FormData(form));
+      // 在任何连接写入前解析 JSON 并固定表单快照，避免异步保存混用后续编辑内容。
+      const initializationBaseURLs = JSON.parse(data.initialization_base_urls);
+      const logRequest = logConnectionRequest(form);
       await saveSQLConnections(data);
+      // 凭据通过独立加密端点保存，普通设置与接入材料不包含访问密钥。
+      await saveLogConnection(form, logRequest);
       await api("settings/save", {
         ...form.config,
-        initialization_base_urls: JSON.parse(data.initialization_base_urls),
+        initialization_base_urls: initializationBaseURLs,
         sql_repository: data.sql_repository,
         code_repository: data.code_repository,
         git_author: data.git_author,
-        log_skill: data.log_skill,
         verification_log_domains: data.verification_log_domains
           .split(/[，,\s]+/)
           .filter(Boolean),

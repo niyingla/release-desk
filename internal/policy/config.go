@@ -21,7 +21,16 @@ const (
 	MaxVerificationLogDomains     = 16
 	VerificationProbeSeconds      = 12
 	VerificationProbeCacheSeconds = 30
-	UpdateTimeoutSeconds          = 12
-	UpdateIntervalHours           = 6
-	MaxUpdateResponseBytes        = 1024 * 1024
+	// 内置日志查询仅做有界采样，连接检查与任务取证共用明确上限。
+	LogRequestSeconds      = 20
+	LogResourcePageSize    = 100
+	MaxLogSampleRows       = 100
+	MaxLogSampleRunes      = 8000
+	MaxLogRequestBytes     = 16 * 1024
+	MaxLogScopeBytes       = 64 * 1024
+	DefaultLogSampleRows   = 20
+	MaxLogResponseBytes    = 8 * 1024 * 1024
+	UpdateTimeoutSeconds   = 12
+	UpdateIntervalHours    = 6
+	MaxUpdateResponseBytes = 1024 * 1024
 )

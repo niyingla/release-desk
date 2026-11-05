@@ -23,6 +23,7 @@ import (
 	aiservice "release-desk/internal/ai"
 	gitrepo "release-desk/internal/git/repository"
 	"release-desk/internal/identity"
+	"release-desk/internal/logquery"
 	"release-desk/internal/platform/desktop"
 	"release-desk/internal/storage/workspace"
 	"release-desk/web"
@@ -49,8 +50,20 @@ func Main() {
 	serve := flag.Bool("serve", false, "仅启动本机服务，用于界面测试")
 	check := flag.Bool("check", false, "检查数据与连接（只读，不执行 SQL）")
 	probeDomain := flag.String("probe-log-network", "", "只检查日志主机网络，不启动桌面或读取业务文件")
+	queryLogs := flag.Bool("query-logs", false, "执行当前验证授权范围内的内置只读日志查询")
+	logScope := flag.String("log-scope", "", "当前验证的加密短期访问文件")
 
 	flag.Parse()
+	// 内置查询子进程不争用窗口锁、不恢复业务数据，也不把原始日志写入应用日志。
+	if *queryLogs {
+		// 查询子进程不争用窗口实例，独立验证项可以使用各自的固定访问范围。
+		if err := logquery.RunCLI(*logScope, os.Stdin, os.Stdout); err != nil {
+			// 查询层只返回安全错误，不能直接输出 SDK 的认证头或响应正文。
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// 预检子进程不争用主窗口锁、不恢复数据，也不写日志；退出码只表示网络可达性。
 	if *probeDomain != "" {
 		// 返回非零让外层沙箱预检阻止收费模型启动，不输出底层网络诊断或本机配置。

@@ -11,6 +11,7 @@ func TestPublicArchivePaths(t *testing.T) {
 	}{
 		{"examples/", true}, {"examples/template.json", true}, {"AGENTS.md", true}, {"web/prompts/verification-schema.json", true},
 		{"examples/5.7.1.json", false}, {"tools/examples/generate.cjs", false}, {".work/private.json", false}, {"settings.json", false}, {"nested/connection-test.json", false}, {"../outside", false},
+		{"log-connection.json", false}, {"nested/log-access.json", false}, {"web/prompts/log-routes-default.json", true},
 	} {
 		// 正反例共享入口，防止允许模板的同时放宽整个 examples 目录。
 		if allowed := privatePathReason(tc.name) == ""; allowed != tc.allowed {

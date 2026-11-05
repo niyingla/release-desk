@@ -1,0 +1,174 @@
+/* 日志页复用当前主题色板；连接、环境和高级配置各自成区，密钥输入不回填。 */
+.settings-modal {
+  width: 910px;
+}
+.log-settings-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 22px 0 18px;
+}
+.log-settings-intro h3 {
+  margin: 0 0 7px;
+  font-size: 17px;
+  color: var(--ink);
+}
+.log-settings-intro p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.log-rules-ready {
+  white-space: nowrap;
+  border-radius: 24px;
+  padding: 7px 11px;
+  color: var(--purple);
+  background: var(--purple-soft);
+  font-size: 11px;
+}
+.log-settings-card {
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 19px 20px;
+  margin-top: 14px;
+}
+.log-settings-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 17px;
+}
+.log-settings-card-head h4 {
+  color: var(--ink);
+  font-size: 14px;
+  margin: 0;
+}
+.log-settings-card-head > span {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.log-settings-card-head .button {
+  min-height: 30px;
+  padding: 7px 11px;
+  font-size: 11px;
+}
+.log-settings-card .form-field {
+  font-size: 12px;
+}
+.log-settings-card .form-field input {
+  height: 41px;
+}
+.log-settings-card input[name="log_endpoint"] {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+}
+.log-security-note {
+  margin: 14px 0 0;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--text-soft);
+}
+.log-mappings {
+  display: grid;
+  gap: 12px;
+}
+.log-mapping {
+  display: grid;
+  grid-template-columns: 115px minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.log-mapping select {
+  width: 100%;
+  height: 41px;
+  border: 1px solid var(--line);
+  background: var(--field-bg);
+  color: var(--ink);
+  border-radius: 7px;
+  padding: 8px 12px;
+}
+.log-mapping small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-soft);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.log-environment {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 41px;
+}
+.log-environment i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--purple);
+}
+.log-environment.test i {
+  background: var(--text-secondary);
+}
+.log-environment.uat i {
+  background: var(--muted);
+}
+.log-routing-details {
+  margin: 14px 2px 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.log-routing-details summary {
+  cursor: pointer;
+}
+.log-routing-details .form-field {
+  margin-top: 14px;
+}
+.log-connection-result {
+  color: var(--text-soft);
+  margin: 16px 2px 0;
+  font-size: 11px;
+  line-height: 1.8;
+}
+.log-check {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.log-check b {
+  display: block;
+  color: var(--ink);
+}
+.log-check.failed b {
+  color: var(--purple);
+}
+.log-check:last-child {
+  border-bottom: 0;
+}
+/* 切换日志页只隐藏按钮，不销毁表单，其他分类保存时仍提交完整设置。 */
+.settings-modal .modal-foot [hidden] {
+  display: none;
+}
+@media (max-width: 620px) {
+  .log-settings-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .log-mapping {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .log-environment {
+    min-height: 24px;
+  }
+  .log-settings-card {
+    padding: 15px;
+  }
+}

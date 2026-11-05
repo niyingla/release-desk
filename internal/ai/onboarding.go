@@ -73,7 +73,7 @@ func (s *Service) AIOnboarding(body []byte) (any, error) {
 // 返回：便于 AI 阅读的 JSON；编码失败时不产生不完整指引。
 func onboardingSettingsPreview(config workspace.Settings) (string, error) {
 	// 使用显式字段边界，不将整个共享存储或未来新增字段直接交给外部对话。
-	data := map[string]any{"code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor, "log_skill": config.LogSkill, "verification_concurrency": config.VerificationConcurrency, "verification_log_domains": config.VerificationLogDomains, "initialization_base_urls": config.InitializationBaseURLs, "scope_rules": config.ScopeRules}
+	data := map[string]any{"code_repository": config.CodeRepository, "sql_repository": config.SQLRepository, "git_author": config.GitAuthor, "verification_concurrency": config.VerificationConcurrency, "verification_log_domains": config.VerificationLogDomains, "initialization_base_urls": config.InitializationBaseURLs, "scope_rules": config.ScopeRules}
 	// JSON 保留路径和字符串的转义语义，不把字段值拼成可执行命令。
 	content, err := json.MarshalIndent(data, "", "  ")
 	// 编码失败时不以空快照冒充本机设置，调用方停止生成接入材料。

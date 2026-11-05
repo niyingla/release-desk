@@ -1,0 +1,40 @@
+{
+  "endpoint": "https://tls-cn-guangzhou.volces.com",
+  "region": "cn-guangzhou",
+  "verified_at": "2026-11-05",
+  "environments": {
+    "prod": {
+      "id": "e389f72c-a160-42b5-84de-760d229702da",
+      "name": "newlink_生产环境",
+      "default_topic": "dc255d71-571a-4d42-9b87-a123597c6d3f",
+      "topics": [
+        {
+          "id": "dc255d71-571a-4d42-9b87-a123597c6d3f",
+          "name": "prod_后端服务日志"
+        }
+      ]
+    },
+    "test": {
+      "id": "0925518d-d4d0-4898-87c9-cc91c0d7a221",
+      "name": "newlink_测试环境",
+      "default_topic": "662e5cfa-b757-4a87-a101-0c1a50d844f9",
+      "topics": [
+        {
+          "id": "662e5cfa-b757-4a87-a101-0c1a50d844f9",
+          "name": "test_后端服务日志"
+        }
+      ]
+    },
+    "uat": {
+      "id": "1844c41c-cf0c-40f9-8fdb-83cc1d16471b",
+      "name": "newlink_uat环境",
+      "default_topic": "60a6b708-4e51-4824-b455-514863992325",
+      "topics": [
+        {
+          "id": "60a6b708-4e51-4824-b455-514863992325",
+          "name": "uat_后端服务日志"
+        }
+      ]
+    }
+  }
+}

@@ -2,8 +2,6 @@ package aiservice
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -63,8 +61,8 @@ func (s *Service) SyncBuiltinSkills() (map[string]string, error) {
 	return paths, nil
 }
 
-// verificationSkillRules 组装内置日志和环境规则，并保留用户可选的本机补充技能入口。
-// 参数 configPath：用户可选的本机补充技能路径；空值或不存在时使用内置规则。
+// verificationSkillRules 组装内置日志和环境规则，不读取个人技能目录。
+// 参数 configPath：仅兼容旧调用签名，当前不读取或引用个人技能目录。
 // 返回：完整规则、补充入口说明及资源错误；不查询日志、不读取凭据或安装个人技能。
 func verificationSkillRules(configPath string) (string, string, error) {
 	// 日志查询和环境路由随同一 EXE 发布，缺失规则不能凭空生成验证结论。
@@ -77,16 +75,8 @@ func verificationSkillRules(configPath string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	// 没有个人技能的电脑仍可使用当前模型提供的日志工具，不再要求固定用户名路径。
-	note := "使用本次提供的内置技能，无需另行安装个人技能；没有可用日志工具时明确配置缺口。"
-	if strings.TrimSpace(configPath) != "" {
-		// 只检查补充说明文件是否存在，不读取其关联的密钥或执行查询脚本。
-		info, err := os.Stat(configPath)
-		if err == nil && info.Mode().IsRegular() {
-			// 文件存在仅代表补充说明可读，不代表其中的数据源已经连接或授权。
-			note = fmt.Sprintf("另有本机补充日志技能 %q，可在遵循本轮只读边界和内置环境规则的前提下读取。", configPath)
-		}
-	}
-	// 补充配置不是替代只读约束的入口，业务任务的时间窗仍由本轮提示词固定。
+	// 旧配置里的路径不再提供给模型，规则与连接都由当前软件入口负责。
+	note := "仅使用本次提供的内置技能，无需配置个人技能目录；已有内置查询入口时优先使用，否则发现实际可用 MCP。"
+	// 凭据配置只在设置页完成，规则正文不能授权模型读取密钥文件。
 	return logs + "\n\n" + routing, note, nil
 }
