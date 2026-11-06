@@ -138,6 +138,10 @@ func NormalizeItem(item *Item) error {
 // 返回：成功返回 nil 并补全默认顺序；SQL 为空、端无效或顺序格式错误时返回错误。
 func ValidateSQLMetadata(data map[string]string) error {
 	// 所属端必须明确，不能猜测跨租户目标。
+	// 生命周期先规范化，导入的旧标题标记与手工文件使用相同禁用规则。
+	if err := NormalizeSQLLifecycle(data); err != nil {
+		return err
+	}
 
 	// 不能让未知端自动落到租户端，避免一条脚本扩散到错误的数据库集合。
 	// 模板库属于相应端的一部分，具体库名由匹配规则统一决定。

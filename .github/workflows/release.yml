@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content internal/versioninfo/releases.json -Raw | ConvertFrom-Json).current
-          node tools/qa/run-packaged.cjs "dist/ReleaseDesk-$version.exe"
+          node tools/qa/run-packaged.cjs "dist/ReleaseDesk-$version.exe" settings-and-version-picker.cjs retired-sql.cjs structure-verify.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Packaged settings UI regression failed' }
       - name: Preserve checked build
         uses: actions/upload-artifact@v7
@@ -56,6 +56,7 @@ jobs:
             dist/ReleaseDesk-*.exe
             dist/ReleaseDesk-*-Windows-x64.zip
             .work/qa/settings-and-version-picker/*.png
+            .work/qa/retired-sql/*.png
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

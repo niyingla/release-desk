@@ -21,10 +21,14 @@ function syncBulkSelection(version) {
   const context = `${currentVersion}|${currentKind}`;
   if (bulkSelectionContext !== context) bulkCheckedIDs.clear();
   bulkSelectionContext = context;
+  // 刷新后新退役的 ID 即使仍在列表中，也必须撤销之前留下的勾选。
   const valid = new Set(
     version.items
       .filter(
-        (item) => item.kind === currentKind && !needsManualVerification(item),
+        (item) =>
+          item.kind === currentKind &&
+          !needsManualVerification(item) &&
+          !isRetiredSQL(item),
       )
       .map((item) => item.id),
   );
@@ -78,6 +82,9 @@ function verificationConcurrencyControl() {
 function bulkRowCheckbox(item) {
   // 复选框绑定稳定 ID，名称只用于辅助识别，不能成为执行目标。
   if (!["sql", "verify"].includes(currentKind)) return "";
+  // 退役项没有可选数据属性，全选不会把保留历史的脚本重新放入执行队列。
+  if (isRetiredSQL(item))
+    return `<td class="table-check-cell"><input type="checkbox" disabled aria-label="已退役，不可执行" title="${escapeHTML(retiredSQLHelp)}"></td>`;
   // 人工项不提供可批量选择的数据属性，全选只遍历真正允许的自动项。
   if (needsManualVerification(item))
     return '<td class="table-check-cell"><input type="checkbox" disabled aria-label="需手动验证，不可加入自动队列" title="关键结果需人工核对，不能自动验证"></td>';

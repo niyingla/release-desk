@@ -36,6 +36,12 @@ type SQLQueuePreview struct {
 // 参数 plan：只读单脚本预览器，不执行任何 SQL。
 // 返回：完整有序预览；任一有效脚本校验失败时拒绝整批，不先执行部分脚本。
 func BuildSQLQueuePreview(version string, items []workspace.Item, plan func(string) (Plan, error)) (SQLQueuePreview, error) {
+	// 整批先检查退役状态，混入一条禁用脚本也不能先访问前面正常脚本的数据库。
+	for _, item := range items {
+		if err := workspace.RequireExecutableSQL(item); err != nil {
+			return SQLQueuePreview{}, fmt.Errorf("%s：%w", item.Data["name"], err)
+		}
+	}
 	// 排序由 SQL 正文决定，用户勾选顺序和归档目录都不能改变建表依赖。
 	sort.SliceStable(items, func(i, j int) bool { return SqlItemLess(items[i], items[j]) })
 	preview := SQLQueuePreview{Token: identity.NewID(), Version: version, Items: []SQLPlannedItem{}, Created: time.Now()}
@@ -99,6 +105,12 @@ func (s *Service) ValidateSQLPlan(plan Plan, config DBConfig) ([]string, error) 
 	// 同时比较源内容和预览内容的摘要，不能只信任预览中声称的 digest。
 	if err != nil || item.Kind != "sql" || identity.Digest(item.Data["sql"]) != plan.Digest || identity.Digest(plan.SQL) != plan.Digest || item.Data["side"] != plan.Side {
 		return nil, errors.New("SQL 内容或所属端发生变化，请重新预览")
+	}
+	// 名称或生命周期退役不一定改变 SQL 摘要，旧令牌确认时必须重新检查当前状态。
+	if err := workspace.RequireExecutableSQL(item); err != nil {
+		// 只记录定位信息，不重复输出旧脚本原文或当前连接凭据。
+		slog.Warn("SQL 执行资格已失效", "version", plan.Version, "item_id", plan.ItemID)
+		return nil, err
 	}
 	// 私有预览仍逐一检查数据库匹配，目标重复也不能让同一库执行两次。
 	if len(MatchDBRules(plan.Databases, plan.Side, config.ScopeRules)) != len(plan.Databases) {

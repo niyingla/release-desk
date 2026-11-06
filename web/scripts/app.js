@@ -390,16 +390,24 @@ function latestExecutions(item) {
  * @returns {*} 当前展示结果；渲染方法只更新界面，不自动执行数据库或发布。
  */
 function sqlStatus(item) {
+  // 退役决定当前执行资格，优先于历史成功或失败；明细仍保留原始结果。
+  if (isRetiredSQL(item)) return "已退役";
+  // 仅汇总当前环境、服务器和相同正文的历史，不能借用其他环境的结果。
   const rows = latestExecutions(item);
+  // 空列表不代表已经执行成功。
   if (!rows.length) return "未执行";
   if (rows.some((r) => r.state === "执行中")) return "执行中";
+  // 中断属于结果未确认，不能降成普通失败后自动重试。
   if (rows.some((r) => r.state === "已中断")) return "已中断";
+  // 汇总提示有失败，逐库成败及错误仍在独立审计中查询。
   if (rows.some((r) => ["失败", "结构不一致"].includes(r.state)))
     return "部分失败";
+  // 尚未完整核验与明确失败不同，不把未知结果当作成功。
   if (rows.some((r) => r.state === "待核验")) return "待核验";
   if (rows.some((r) => ["等待中", "未执行"].includes(r.state))) return "未完成";
   // 只读核验通过不能当作已经执行过初始化数据。
   if (rows.some((r) => r.verification_only)) return "结构核验通过";
+  // 所有有效目标都有完成凭证后才显示成功，不重写任何历史。
   return "成功";
 }
 
@@ -711,11 +719,16 @@ function highlight(code, type) {
  * @returns {*} 当前展示结果；渲染方法只更新界面，不自动执行数据库或发布。
  */
 function renderDetail() {
+  // 详情只绑定当前版本的选中项，不能沿用其他版本同名脚本的操作对象。
+  // 列表高亮只表示正在查看，不表示脚本已获准执行。
   const r = selectedItem();
   if (!r) {
+    // 被筛选隐藏或删除后清空旧正文，避免按钮与实际选择脱节。
     $("#detail").innerHTML = "";
     return;
   }
+  // 各类型只展示自己的主内容，SQL 的名称和说明不能替代真实脚本正文。
+  // 这里组织只读视图，切换详情不会建立数据库连接或创建执行计划。
   const primary =
     currentKind === "sql"
       ? "sql"
@@ -724,24 +737,42 @@ function renderDetail() {
         : currentKind === "verify"
           ? "steps"
           : "description";
+  // 空内容明确显示占位，不把上一条记录残留的 SQL 当作当前内容。
   let code = r.data[primary] || "暂无详细内容";
+  // 验证和接口详情保留各自的完整复制格式，不能套用 SQL 的摘要。
   if (currentKind === "verify") code = verificationItemText(r);
   if (currentKind === "init_api") code = initializationText(r);
+  // 高亮仅改变展示，不能在渲染时修复、重排或格式化待执行的原始 SQL。
+  // 原文先由高亮器转义，AI 或手工内容不能借详情区注入页面脚本。
+  // 展示行号用于核对原文位置，不作为执行顺序或 SQL 语句编号。
   const codeHTML = highlight(code, currentKind)
     .split("\n")
     .map(
       (line, i) =>
+        // 保留空白行，使长脚本中的注释边界与复制出的原文保持对应。
         `<span class="code-line" data-line="${i + 1}">${line || " "}</span>`,
     )
     .join("");
+  // 侧栏提供来源与历史线索，不能据此推导当前脚本仍可执行。
+  // 业务内容、执行审计和上线状态独立，查看任意一种都不会自动更新另一种。
+  // 按类型显式列出字段，防止 SQL 详情混入无关接口的参数或临时授权信息。
   const sideFields =
     currentKind === "sql"
       ? [
+          // 所属端只描述原脚本范围，实际目标仍须在受控预览中重新发现。
           ["所属端", r.data.side],
+          // 人工序号仅说明同阶段顺序，不会因打开详情而串行执行前置脚本。
           ["执行顺序", r.data.order],
+          // 退役优先展示为不可执行，旧的成功或失败仍在执行明细中保留。
+          // 环境标签读取当前 SQL 页选择，不能将测试审计解释成 UAT 结果。
+          // 退役属于脚本本身，切换环境不能恢复执行资格。
+          // 历史按稳定 ID 关联，名称调整不会清空退役前的审计。
           [sqlEnvironmentLabel() + "执行", sqlStatus(r)],
+          // 短 SHA 仅供定位，后端仍以完整提交和内容摘要识别来源。
           ["来源提交", r.data.source_commit?.slice(0, 12)],
+          // 来源作者用于追溯导入记录，不表示脚本已由该作者在线上执行。
           ["来源作者", r.data.source_author],
+          // 回滚说明与正文一并留档，界面不会自动发送其中任何语句。
           ["回滚说明", r.data.rollback],
         ]
       : currentKind === "config"
@@ -774,8 +805,15 @@ function renderDetail() {
                 ["线上状态", r.online],
                 ["标记时间", r.online_at],
               ];
+  // 退役 SQL 通过专用操作区保留历史入口，隐藏执行、重试与新核验。
+  // 是否允许启动任务最终由后端检查，隐藏按钮不能代替旧令牌失效校验。
+  // 通用复制入口继续读取原文，退役不等于删除脚本或清空审计。
+  // 重新渲染使用最新快照，刷新后不会保留已经失效的执行按钮。
+  // 各类名称、元数据与来源路径全部转义，只读来源不能变成可点击的执行命令。
+  // 省略空侧栏字段只影响展示，不替用户补造发布状态或来源证明。
+  // 删除仍是独立的明确操作；退役记录正常留在版本中供历史追溯。
   $("#detail").innerHTML =
-    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? button("execute", "一键执行", "play", "primary") + button("retry", "重试失败库", "refresh") + button("check-structure", "仅核验结构", "check") + button("history", "执行明细", "clock") : ""}${currentKind === "init_api" ? button("call-initialization", r.data.url?.trim() ? "手动调用" : "补全调用路径", r.data.url?.trim() ? "play" : "edit", "primary") : ""}${currentKind === "verify" ? verificationDetailActions(r) : button("copy-detail", currentKind === "config" ? "复制配置" : currentKind === "init_api" ? "复制调用信息" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
+    `<div class="panel detail-panel"><div class="detail-head"><div><div class="detail-name">${icon(currentKind === "sql" ? "database" : "file")}　${escapeHTML(itemTitle(r))}</div><div class="detail-meta">${escapeHTML(r.service || "未指定服务")} · ${escapeHTML(r.action)} · 记录详情</div></div><div class="actions">${currentKind === "sql" ? sqlDetailActions(r) : ""}${currentKind === "init_api" ? button("call-initialization", r.data.url?.trim() ? "手动调用" : "补全调用路径", r.data.url?.trim() ? "play" : "edit", "primary") : ""}${currentKind === "verify" ? verificationDetailActions(r) : button("copy-detail", currentKind === "config" ? "复制配置" : currentKind === "init_api" ? "复制调用信息" : "复制内容", "copy")}${button("edit-item", "编辑", "edit")}${button("delete-item", "删除", "", "danger small")}</div></div><div class="detail-body"><div class="code-wrap"><div class="code-toolbar"><span>${currentKind === "sql" ? "SQL PREVIEW" : currentKind === "config" ? "CONFIGURATION" : currentKind === "verify" ? "RELEASE VERIFICATION" : "DETAILS"}</span><span>UTF-8 · ${code.split("\n").length} 行</span></div><pre class="code">${codeHTML}</pre></div><dl class="detail-aside">${sideFields
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${k}</dt><dd>${escapeHTML(v)}</dd>`)
       .join(

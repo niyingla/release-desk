@@ -17,6 +17,7 @@ job: handler（名称）, frequency（仅 Cron 表达式，如 0 0 10 * * ?）, 
 config: filename（文件名）, prefix（配置前缀）, content（完整配置）, required（是否必须配置：必须配置/可选配置/待确认）, description。
 配置 required 仅在确认代码默认值足以满足本次上线行为时填写“可选配置”；须显式覆盖默认值或缺配置无法正常运行时填写“必须配置”；证据不足或旧文件缺字段填写“待确认”。在 description 写明实际默认值、代码依据及何时需要覆盖；不得仅因存在默认值就判断为可选。
 sql: name, side（租户端/服务商端/平台端）, database（说明）, order（同类型内数字顺序）, sql, rollback, description。
+SQL 可声明 lifecycle（有效/已退役）；旧文件缺省为有效。明确停用的历史脚本使用“已退役”，不能只写文字提醒；软件也兼容名称中的【已退役，勿执行】标记。退役项保留正文和历史，禁止执行、重试和新核验，AI 刷新不得重新启用。
 phase 由软件解析 SQL 正文得到，不必填写；目录名、文件名和 AI 填写的类型标签不影响实际分类。
 topic: topic, partitions（数字字符串）, group（消费组）, description。
 init_api: name（接口名称）, side（租户端/服务商端/平台端）, method（HTTP 方法）, service_path（Controller 服务内路径，不含网关前缀）, url（以 / 开头且含服务前缀的网关调用路径）, parameter_mode（无参/必填参数）, params（Query JSON 模板）, body（Body JSON 模板）, prerequisites（前置条件）, expected（结果核对方式）, description。服务内路径已知但网关映射未知时必须保留 service_path，url 留空并明确待确认；不按服务名猜前缀，也不能将服务内路径当作 url。只记录有依据的上线后初始化调用，模板字段为必填，未知值留空供用户发送前填写。环境入口在设置集中维护，Token 每次临时输入，不写入版本文件；扫描不调用接口，不填写实际调用结果。

@@ -154,6 +154,10 @@ func (a *Service) GitImport(body []byte) (any, error) {
 				r.Status = old.Status
 				r.Data["order"] = old.Data["order"]
 				r.Data["rollback"] = old.Data["rollback"]
+				// 新来源提交只更新内容，不能让已退役的脚本恢复执行资格。
+				if workspace.IsRetiredSQL(old) {
+					r.Data["lifecycle"] = workspace.SQLLifecycleRetired
+				}
 				v.Items[i] = r
 				break
 			}

@@ -164,6 +164,10 @@ func MergeExternalVersion(previous, incoming VersionFile) (VersionFile, error) {
 		item.Online = old.Online
 		item.OnlineAt = old.OnlineAt
 		item.Status = old.Status
+		// AI 刷新不能重新启用旧脚本；退役记录继续保留正文和完整历史。
+		if IsRetiredSQL(old) {
+			item.Data["lifecycle"] = SQLLifecycleRetired
+		}
 		item.VerifyRuns = old.VerifyRuns
 		item.VerifyState = PendingVerificationState(item)
 		if VerificationHash(old) == VerificationHash(item) {

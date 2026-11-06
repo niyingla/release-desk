@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"sort"
@@ -315,8 +316,10 @@ func (s *Service) Plan(version, id string, retry bool, environment string, verif
 		return Plan{}, availabilityErr
 	}
 
-	if item.Kind != "sql" {
-		return Plan{}, errors.New("只能执行 SQL 记录")
+	// 先拦截退役脚本，避免为了展示错误而读取连接或发现目标库。
+	if e = workspace.RequireExecutableSQL(item); e != nil {
+		slog.Warn("SQL 预览已拒绝", "version", version, "item_id", id)
+		return Plan{}, e
 	}
 
 	if _, e = sqlscript.SplitSQL(item.Data["sql"]); e != nil {
