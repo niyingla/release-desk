@@ -16,9 +16,9 @@ import (
 	"release-desk/internal/storage/workspace"
 )
 
-// TestNativeTrayMinimizeRestoreAndDirectExit 验证任务栏保留、标题栏收托盘及关闭退出的原生窗口行为。
+// TestNativeTrayMinimizeCloseAndExplicitExit 验证最小化保留任务栏、关闭收托盘和显式退出。
 // 参数 t：测试上下文；只创建并操作本测试的 Windows 窗口，不关闭用户软件。
-func TestNativeTrayMinimizeRestoreAndDirectExit(t *testing.T) {
+func TestNativeTrayMinimizeCloseAndExplicitExit(t *testing.T) {
 	// 真正创建 Windows 窗口并发送关闭消息，不调用 Codex 或数据库。
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -51,14 +51,16 @@ func TestNativeTrayMinimizeRestoreAndDirectExit(t *testing.T) {
 	}
 	// 再次从任务栏恢复原窗口，不创建新实例或改变托盘注册。
 	send.Call(hwnd, 0x0112, 0xf120, 0)
-	// 标题栏来源会在非客户区鼠标处理期间标记；这里验证后续系统命令的实际效果。
-	tray.CaptionMinimizePending = true
-	send.Call(hwnd, 0x0112, 0xf020, 0)
+	// × 只隐藏到通知区，不能调用退出回调或销毁后台任务所属的主窗口。
+	send.Call(hwnd, 0x0010, 0, 0)
 	if valid, _, _ := isWindow.Call(hwnd); valid == 0 {
-		t.Fatal("最小化销毁了原窗口")
+		t.Fatal("点击 × 销毁了原窗口")
 	}
 	if shown, _, _ := visible.Call(hwnd); shown != 0 {
-		t.Fatal("点击最小化未收进系统托盘")
+		t.Fatal("点击 × 未收进系统托盘")
+	}
+	if closed {
+		t.Fatal("点击 × 取消了后台任务，不应触发真正退出")
 	}
 	if !tray.Registered {
 		t.Fatal("隐藏窗口时没有托盘图标")
@@ -82,13 +84,17 @@ func TestNativeTrayMinimizeRestoreAndDirectExit(t *testing.T) {
 	if shown, _, _ := visible.Call(hwnd); shown == 0 {
 		t.Fatal("点击托盘没有恢复原窗口")
 	}
-	// × 直接走退出流程，不因为任务运行而隐藏或保持进程占用。
+	// 再次关闭仍只隐藏；托盘退出从隐藏状态使用独立消息结束原窗口。
 	send.Call(hwnd, 0x0010, 0, 0)
+	if closed {
+		t.Fatal("重复关闭触发了任务取消")
+	}
+	send.Call(hwnd, 0x8012, 0, 0)
 	if !closed {
-		t.Fatal("关闭没有通知应用停止后台任务")
+		t.Fatal("显式退出没有通知应用停止后台任务")
 	}
 	if valid, _, _ := isWindow.Call(hwnd); valid != 0 {
-		t.Fatal("点击 × 未销毁窗口")
+		t.Fatal("显式退出未销毁窗口")
 	}
 	if tray.Registered {
 		t.Fatal("退出后遗留托盘图标")

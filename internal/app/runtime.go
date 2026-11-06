@@ -103,8 +103,8 @@ func run(data string, serve, check bool) error {
 	// 界面资源来自 EXE 内嵌内容。
 	// 原生窗口使用独立 WebView 数据目录。
 	// 最小尺寸保证表格与操作区可用。
-	// 最小化只隐藏窗口，后台任务照常继续。
-	// 点击 × 取消已有任务并限时保存执行审计。
+	// － 正常最小化并保留任务栏入口，后台任务照常继续。
+	// 点击 × 隐藏到托盘；显式退出才取消任务并限时保存执行审计。
 	// 未确认的 SQL 中断不能被当成成功或普通失败。
 	// 界面不会把令牌放到外部页面链接。
 	// 最终退出时记录生命周期结束。
@@ -172,7 +172,7 @@ func run(data string, serve, check bool) error {
 		go app.services().Updates.Run()
 	}
 
-	// × 退出不能被未完成的 HTTP 预览请求拖住，业务写入由 Store 收尾保存审计。
+	// 真正退出不能被未完成的 HTTP 预览请求拖住，业务写入由 Store 收尾保存审计。
 	defer server.Close()
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -196,7 +196,7 @@ func run(data string, serve, check bool) error {
 	}
 
 	defer window.Destroy()
-	// － 收进托盘继续工作，× 取消任务并结束进程；两种操作不能共用隐藏逻辑。
+	// － 保留任务栏，× 隐藏到托盘；托盘显式退出才取消任务并结束进程。
 	tray, err := desktop.InstallDesktopTray(uintptr(window.Window()), store.RequestClose)
 	if err != nil {
 		return err

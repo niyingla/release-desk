@@ -1,7 +1,11 @@
 param([string]$Executable)
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if (-not $Executable) { $Executable = Join-Path $taskRoot 'dist\ReleaseDesk.exe' }
+if (-not $Executable) {
+    # 默认验证本次版本，避免误测仍保留在 dist 的旧通用 EXE。
+    $taskVersion = (Get-Content -LiteralPath (Join-Path $taskRoot 'internal\versioninfo\releases.json') -Raw -Encoding utf8 | ConvertFrom-Json).current
+    $Executable = Join-Path $taskRoot ('dist\ReleaseDesk-' + $taskVersion + '.exe')
+}
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $taskData = Join-Path $taskRoot ('.work\qa\data\native-tray-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $taskDuplicateData = $taskData + '-duplicate'
@@ -19,6 +23,7 @@ public static class ReleaseDeskWindowQA {
  [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr window,uint message,UIntPtr wParam,IntPtr lParam);
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window,int state);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+ [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
  [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr window,uint message,UIntPtr wParam,IntPtr lParam);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr window,StringBuilder name,int length);
  public struct Rect { public int Left,Top,Right,Bottom; }
@@ -71,14 +76,23 @@ function Wait-TaskWindow([Diagnostics.Process]$Process) {
 }
 
 function Close-TaskWindow([IntPtr]$Window, [Diagnostics.Process]$Process) {
-    # 发送与点击 × 相同的窗口消息，让软件自己的取消和审计收尾逻辑执行。
-    [void][ReleaseDeskWindowQA]::SendMessageW($Window, 0x0010, [UIntPtr]::Zero, [IntPtr]::Zero)
-    if (-not $Process.WaitForExit(6000)) { throw '点击 × 后仍有无窗口进程占用实例锁' }
+    # 使用与托盘“退出软件”相同的独立消息，让软件正常取消并保存；× 只负责隐藏。
+    [void][ReleaseDeskWindowQA]::SendMessageW($Window, 0x8012, [UIntPtr]::Zero, [IntPtr]::Zero)
+    if (-not $Process.WaitForExit(6000)) { throw '显式退出后仍有进程占用实例锁' }
     if ($Process.ExitCode -ne 0) { throw ('软件退出返回错误状态：' + $Process.ExitCode) }
 }
 
 $taskFirst = $null
 $taskThird = $null
+# 已有正式程序时直接跳过，不用重复启动去激活用户正在使用的窗口。
+$taskExisting = $null
+try { $taskExisting = [Threading.Mutex]::OpenExisting('Global\ReleaseDesk.Desktop') }
+catch [Threading.WaitHandleCannotBeOpenedException] { }
+if ($taskExisting) {
+    $taskExisting.Dispose()
+    Write-Output 'NATIVE SKIP: 已有用户程序运行，保留原窗口和后台任务；原生消息由隔离 Go 窗口测试覆盖。'
+    return
+}
 try {
     $taskFirst = Start-Process -FilePath $Executable -ArgumentList @('--data-dir', ('"' + $taskData + '"')) -WindowStyle Hidden -PassThru
     $taskWindow = Wait-TaskWindow $taskFirst
@@ -91,12 +105,15 @@ try {
     }
     [void][ReleaseDeskWindowQA]::ShowWindow($taskWindow, 5)
     [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0112, [UIntPtr]0xf020, [IntPtr]::Zero)
-    if ([ReleaseDeskWindowQA]::IsWindowVisible($taskWindow)) { throw '点击 － 未收进系统托盘' }
+    if (-not [ReleaseDeskWindowQA]::IsWindowVisible($taskWindow) -or -not [ReleaseDeskWindowQA]::IsIconic($taskWindow)) { throw '点击 － 未正常最小化并保留任务栏入口' }
+    [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0112, [UIntPtr]0xf120, [IntPtr]::Zero)
+    [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0010, [UIntPtr]::Zero, [IntPtr]::Zero)
+    if ($taskFirst.HasExited -or [ReleaseDeskWindowQA]::IsWindowVisible($taskWindow)) { throw '点击 × 没有保持后台运行并收进托盘' }
     [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x8011, [UIntPtr]::Zero, [IntPtr]0x0202)
     if (-not [ReleaseDeskWindowQA]::IsWindowVisible($taskWindow)) { throw '点击托盘未恢复原窗口' }
 
     # 再收进托盘，从不同数据目录重复启动，仍必须恢复原来的同一个窗口。
-    [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0112, [UIntPtr]0xf020, [IntPtr]::Zero)
+    [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0010, [UIntPtr]::Zero, [IntPtr]::Zero)
     $taskSecond = Start-Process -FilePath $Executable -ArgumentList @('--data-dir', ('"' + $taskDuplicateData + '"')) -WindowStyle Hidden -PassThru
     if (-not $taskSecond.WaitForExit(6000) -or $taskSecond.ExitCode -ne 0) { throw '重复启动进程没有正常退出' }
     $taskDeadline = (Get-Date).AddSeconds(2)
@@ -114,7 +131,7 @@ try {
         Start-Sleep -Milliseconds 100
     }
     # 从隐藏状态打开真实右键菜单，定向向该应用投递菜单键，不操作其他软件。
-    [void][ReleaseDeskWindowQA]::SendMessageW($taskReopened, 0x0112, [UIntPtr]0xf020, [IntPtr]::Zero)
+    [void][ReleaseDeskWindowQA]::SendMessageW($taskReopened, 0x0010, [UIntPtr]::Zero, [IntPtr]::Zero)
     [void][ReleaseDeskWindowQA]::PostMessageW($taskReopened, 0x8011, [UIntPtr]::Zero, [IntPtr]0x0205)
     $taskDeadline = (Get-Date).AddSeconds(5)
     $taskMenu = [IntPtr]::Zero
@@ -127,13 +144,13 @@ try {
     if (-not [ReleaseDeskWindowQA]::ChooseExit($taskMenu,[uint32]$taskThird.Id)) { throw '菜单位置不属于测试进程，拒绝点击其他应用' }
     if (-not $taskThird.WaitForExit(6000) -or $taskThird.ExitCode -ne 0) { throw '右键菜单退出后进程未正常结束' }
     if (-not (Select-String -LiteralPath $taskLog -Pattern '用户从托盘请求退出' -Quiet)) { throw '没有触发真实托盘退出命令' }
-    Write-Output 'NATIVE PASS: 最小化、托盘恢复、重复启动恢复、× 退出、重启、真实右键菜单退出；无真实 SQL/Codex 调用'
+    Write-Output 'NATIVE PASS: － 保留任务栏、× 收托盘、托盘恢复、重复启动恢复、显式退出及真实右键菜单退出；无真实 SQL/Codex 调用'
 } finally {
     # 失败时也只对本轮 PID 的已标记窗口发送关闭，不终止用户的其他实例或任务。
     foreach ($taskProcess in @($taskFirst, $taskThird)) {
         if ($taskProcess -and -not $taskProcess.HasExited) {
             $taskWindow = [ReleaseDeskWindowQA]::Find([uint32]$taskProcess.Id)
-            if ($taskWindow -ne [IntPtr]::Zero) { [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x0010, [UIntPtr]::Zero, [IntPtr]::Zero) }
+            if ($taskWindow -ne [IntPtr]::Zero) { [void][ReleaseDeskWindowQA]::SendMessageW($taskWindow, 0x8012, [UIntPtr]::Zero, [IntPtr]::Zero) }
         }
     }
 }

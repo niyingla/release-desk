@@ -10,13 +10,13 @@ const ShutdownGracePeriod = 2 * time.Second
 const ShutdownPollInterval = 20 * time.Millisecond
 
 // RequestClose 发出应用退出信号，立即阻止新任务并取消已有任务。
-// 无业务入参；只在用户关闭主窗口或应用退出收尾时调用。
+// 无业务入参；只在用户显式退出或应用退出收尾时调用，关闭到托盘不调用。
 // 不返回业务值；取消不等于数据库回滚，执行结果仍由独立审计记录。
 func (s *Store) RequestClose() {
 	// 记录锁保证关闭与启动任务互斥，不能在取消之后又启动一批新 SQL。
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
-	// 原生关闭消息与 run 的收尾都会调用，重复请求不能重复改变任务状态。
+	// 原生显式退出与 run 的收尾都会调用，重复请求不能重复改变任务状态。
 	if s.Closing {
 		return
 	}

@@ -13,7 +13,7 @@ Windows 单机版本发版工作台，使用 Go + WebView2，数据保存在当�
 https://github.com/niyingla/release-desk/releases/latest
 运行附件中的 ReleaseDesk-x.y.z.exe。Windows 需有 Microsoft Edge WebView2 Runtime。
 软件启动后自动检查更新，每 6 小时复查，也可点击“检查更新”。
-更新提示打开 GitHub 下载页；关闭旧版后再运行新版，不覆盖本机记录。
+更新提示打开 GitHub 下载页；从托盘右键退出旧版后再运行新版，不覆盖本机记录。
 
 数据与连接
 数据目录：%APPDATA%\ReleaseDesk。

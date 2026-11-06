@@ -11,26 +11,23 @@ import (
 
 // Windows 消息与通知区协议值集中定义，避免在窗口回调中散布魔数。
 const (
-	TrayCallbackMessage     = 0x8000 + 17
-	WindowSystemCommand     = 0x0112
-	WindowCloseMessage      = 0x0010
-	WindowFinalDestroy      = 0x0082
-	WindowMinimizeCommand   = 0xf020
-	WindowNonClientLeftDown = 0x00a1
-	WindowMinimizeHit       = 8
-	TrayLeftButtonUp        = 0x0202
-	TrayLeftDoubleClick     = 0x0203
-	TrayRightButtonUp       = 0x0205
-	TrayContextMenu         = 0x007b
-	WindowNullMessage       = 0x0000
-	TrayMenuRestore         = 1
-	TrayMenuExit            = 2
-	MenuReturnCommand       = 0x0100
-	MenuRightButton         = 0x0002
-	TrayAdd                 = 0
-	TrayDelete              = 2
-	TrayFlags               = 1 | 2 | 4
-	TrayIconID              = 1
+	TrayCallbackMessage = 0x8000 + 17
+	WindowExitMessage   = 0x8000 + 18
+	WindowCloseMessage  = 0x0010
+	WindowFinalDestroy  = 0x0082
+	TrayLeftButtonUp    = 0x0202
+	TrayLeftDoubleClick = 0x0203
+	TrayRightButtonUp   = 0x0205
+	TrayContextMenu     = 0x007b
+	WindowNullMessage   = 0x0000
+	TrayMenuRestore     = 1
+	TrayMenuExit        = 2
+	MenuReturnCommand   = 0x0100
+	MenuRightButton     = 0x0002
+	TrayAdd             = 0
+	TrayDelete          = 2
+	TrayFlags           = 1 | 2 | 4
+	TrayIconID          = 1
 )
 
 // notifyIconData 与 Windows NOTIFYICONDATAW 字段布局一致，使用 Unicode 提示文字。
@@ -53,14 +50,13 @@ type NotifyIconData struct {
 }
 
 type DesktopTray struct {
-	Window                 uintptr
-	Callback               uintptr
-	TaskbarMessage         uintptr
-	Data                   NotifyIconData
-	Registered             bool
-	OwnedIcon              bool
-	OnExit                 func()
-	CaptionMinimizePending bool
+	Window         uintptr
+	Callback       uintptr
+	TaskbarMessage uintptr
+	Data           NotifyIconData
+	Registered     bool
+	OwnedIcon      bool
+	OnExit         func()
 }
 
 var TrayShell = windows.NewLazySystemDLL("shell32.dll")
@@ -77,9 +73,9 @@ var DefaultTraySubclass = TrayControls.NewProc("DefSubclassProc")
 
 var ShowDesktopWindow = DesktopUser32.NewProc("ShowWindow")
 
-// InstallDesktopTray 接管最小化消息并安装系统托盘入口。
+// InstallDesktopTray 接管关闭隐藏与显式退出消息，并安装系统托盘入口。
 // 参数 hwnd：本应用创建的主窗口句柄；必须在所属 UI 线程调用。
-// 参数 onExit：用户点击 × 时请求取消后台任务的短回调，不阻塞窗口消息循环。
+// 参数 onExit：用户从托盘明确退出时取消后台任务的短回调，关闭隐藏时不会调用。
 // 返回：托盘控制对象；窗口消息钩子安装失败时返回错误，不能隐藏无恢复入口的窗口。
 func InstallDesktopTray(hwnd uintptr, onExit func()) (*DesktopTray, error) {
 	// 子类化只扩展本应用窗口，不替换 WebView 自身的键盘、大小和绘制处理。
@@ -92,7 +88,7 @@ func InstallDesktopTray(hwnd uintptr, onExit func()) (*DesktopTray, error) {
 	}
 	// 回调由 Windows 持有，生命周期与主窗口一致，不能使用会失效的临时函数指针。
 	t.Callback = windows.NewCallback(t.HandleMessage)
-	// 钩子安装失败不能继续创建一个无法正确处理最小化与退出的隐藏窗口。
+	// 钩子安装失败不能继续创建一个无法正确处理关闭隐藏与退出的窗口。
 	result, _, err := SetTraySubclass.Call(hwnd, t.Callback, TrayIconID, 0)
 	if result == 0 {
 		return nil, fmt.Errorf("无法安装托盘窗口处理：%w", err)
@@ -113,7 +109,7 @@ func InstallDesktopTray(hwnd uintptr, onExit func()) (*DesktopTray, error) {
 	t.TaskbarMessage, _, _ = DesktopUser32.NewProc("RegisterWindowMessageW").Call(uintptr(unsafe.Pointer(name)))
 	// 注册失败仅影响托盘能力；窗口仍可保持普通任务栏最小化，不能直接消失。
 	if !t.Add() {
-		slog.Warn("托盘图标暂不可用，最小化将保留任务栏入口")
+		slog.Warn("托盘图标暂不可用，窗口将保留任务栏入口")
 	}
 	return t, nil
 }
@@ -174,7 +170,7 @@ func (t *DesktopTray) Close() {
 
 // ShowContextMenu 在当前鼠标位置显示恢复、退出菜单。
 // 无业务入参；必须由托盘鼠标消息在窗口所属 UI 线程调用。
-// 不返回业务值；退出复用 × 的关闭流程，保留后台任务取消和审计收尾。
+// 不返回业务值；退出使用独立消息，保留后台任务取消和审计收尾。
 func (t *DesktopTray) ShowContextMenu() {
 	// 每次弹出独立菜单，选择或取消后统一释放，避免重复右键泄漏句柄。
 	menu, _, err := DesktopUser32.NewProc("CreatePopupMenu").Call()
@@ -192,7 +188,7 @@ func (t *DesktopTray) ShowContextMenu() {
 	}{{TrayMenuRestore, "打开主窗口"}, {TrayMenuExit, "退出软件"}} {
 		label, _ := windows.UTF16PtrFromString(entry.label)
 		if ok, _, _ := DesktopUser32.NewProc("AppendMenuW").Call(menu, 0, entry.id, uintptr(unsafe.Pointer(label))); ok == 0 {
-			// 构建不完整时不显示半个菜单，保留左击恢复和 × 退出入口。
+			// 构建不完整时不显示半个菜单，保留左击恢复入口以便稍后重试。
 			slog.Warn("无法添加托盘菜单项", "command", entry.id)
 			return
 		}
@@ -215,41 +211,38 @@ func (t *DesktopTray) ShowContextMenu() {
 		ShowDesktopWindow.Call(t.Window, windows.SW_RESTORE)
 		ForegroundDesktopWindow.Call(t.Window)
 	case TrayMenuExit:
-		// 异步投递与 × 相同的消息，不直接杀进程或绕开保存流程。
+		// 显式退出不能再复用负责隐藏的 × 消息，也不能直接杀进程绕开审计收尾。
 		slog.Info("用户从托盘请求退出")
-		DesktopUser32.NewProc("PostMessageW").Call(t.Window, WindowCloseMessage, 0, 0)
+		DesktopUser32.NewProc("PostMessageW").Call(t.Window, WindowExitMessage, 0, 0)
 	}
 }
 
-// HandleMessage 按 Windows 消息区分托盘最小化、恢复和真正退出。
+// HandleMessage 区分正常最小化、关闭隐藏、托盘恢复和真正退出。
 // 参数 hwnd：消息所属的本应用主窗口。
 // 参数 message：Windows 消息标识，非本功能消息交回 WebView 原处理器。
-// 参数 wParam：系统命令或图标标识，最小化时只比较标准命令部分。
+// 参数 wParam：系统命令或图标标识；最小化等标准消息保持原值交回 Windows。
 // 参数 lParam：通知区回调中的鼠标事件，其他消息按原值透传。
 // 参数 subclassID：系统保存的子类标识，仅用于卸载该钩子。
 // 参数 reference：系统保留参数，本实现不使用、不解释为业务数据。
 // 返回：已消费消息返回 0；其他消息返回原窗口处理器结果。
 func (t *DesktopTray) HandleMessage(hwnd, message, wParam, lParam, subclassID, reference uintptr) uintptr {
-	// 标题栏按钮由 DefSubclassProc 跟踪鼠标释放并同步发出系统命令。
-	// 仅在该调用期间标记来源；移出按钮或取消点击后不能污染下一次任务栏操作。
-	if message == WindowNonClientLeftDown && wParam == WindowMinimizeHit {
-		t.CaptionMinimizePending = true
-		defer func() { t.CaptionMinimizePending = false }()
-		result, _, _ := DefaultTraySubclass.Call(hwnd, message, wParam, lParam)
-		return result
-	}
+	// 不再接管标题栏最小化，任务栏、键盘与“－”都使用 Windows 原有行为。
+	// 标准最小化保留任务栏按钮，且不触发后台任务取消。
 	// 右键只打开原生菜单，不能先恢复窗口或直接中断正在运行的任务。
 	if message == TrayCallbackMessage && (lParam == TrayRightButtonUp || lParam == TrayContextMenu) {
 		t.ShowContextMenu()
 		return 0
 	}
-	// 只有标题栏“－”且图标注册成功才隐藏；任务栏或键盘最小化交回 Windows。
-	if message == WindowSystemCommand && wParam&0xfff0 == WindowMinimizeCommand && t.CaptionMinimizePending && t.Add() {
-		// 来源只消费一次，恢复后点击任务栏不得继续沿用旧标记。
-		t.CaptionMinimizePending = false
-		// SW_HIDE 去掉任务栏按钮；恢复入口保留在右下角通知区。
-		ShowDesktopWindow.Call(hwnd, windows.SW_HIDE)
-		slog.Info("主窗口已收进系统托盘")
+	// × 或 Alt+F4 只收起窗口，必须先有真实托盘图标才允许从任务栏隐藏。
+	if message == WindowCloseMessage {
+		if t.Add() {
+			ShowDesktopWindow.Call(hwnd, windows.SW_HIDE)
+			slog.Info("主窗口关闭到系统托盘，后台任务继续")
+		} else {
+			// 通知区暂不可用时退回普通最小化，不能把仍在运行的窗口藏到无处恢复。
+			ShowDesktopWindow.Call(hwnd, windows.SW_MINIMIZE)
+			slog.Warn("托盘暂不可用，主窗口已最小化到任务栏")
+		}
 		return 0
 	}
 	// 左击或双击通知区图标都恢复同一窗口，不创建新 WebView 或新进程。
@@ -259,10 +252,14 @@ func (t *DesktopTray) HandleMessage(hwnd, message, wParam, lParam, subclassID, r
 		ForegroundDesktopWindow.Call(hwnd)
 		return 0
 	}
-	// × 始终直接退出；取消请求先发出，让数据库和 Codex 有机会记录中断。
-	if message == WindowCloseMessage && t.OnExit != nil {
-		// 退出回调只发出取消信号，实际审计收尾在消息循环退出后执行。
-		t.OnExit()
+	// 只有显式退出才取消任务，并绕过本层的关闭隐藏策略调用原窗口关闭流程。
+	if message == WindowExitMessage {
+		if t.OnExit != nil {
+			// 回调只发出取消信号，实际保存与限时收尾仍在消息循环退出后执行。
+			t.OnExit()
+		}
+		result, _, _ := DefaultTraySubclass.Call(hwnd, WindowCloseMessage, 0, 0)
+		return result
 	}
 	if message == WindowFinalDestroy {
 		// 销毁时先移除图标再卸载钩子，避免残留一个点击无反应的托盘项。
